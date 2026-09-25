@@ -51,9 +51,17 @@ obligations.
    Provenance is measurable across the three protocols, and only one of
    them separates cleanly: `mutex_grammar` takes its table from
    `mutex.rkt` and its grammar from the discipline prose -- two
-   artifacts.  `rcu.v` cites `ostd/src/sync/rcu` for both sides even
-   though `ostd/specs/sync/rcu/` exists, so its table could be
-   re-pointed at the spec; `rwlock.v` has no spec at all, so both sides
+   artifacts.  `rcu.v` takes both sides from the implementation, and
+   the reason was checked rather than assumed: `ostd/specs/sync/rcu/`
+   exists but covers allocation registration and publication identity
+   only, and `root.rs` says outright that "physical ownership, reader
+   protection, and detachment evidence must be supplied by the RCU
+   protocol" -- which no spec file states (0 hits for `load_read_token`
+   or `RCU_READER_SLOTS` under `specs/`).  So the property rcu.v
+   formalizes -- a guard dropped that no read is outstanding for -- has
+   no spec clause behind it; it exists only in code, and our grammar is
+   the first written form of the discipline.  That is a gap report in
+   1.1's own vocabulary.  `rwlock.v` has no spec at all, so both sides
    come from implementation + Verus invariant.  The equivalence is only
    as informative as that separation.
 2. **When does a protocol need parameters, and when a non-right-linear

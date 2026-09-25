@@ -8,6 +8,16 @@
    *unbounded* ghost registry -- which is exactly the idealization this
    model makes: the outstanding-reader count is a `nat`.
 
+   Both sides come from that one file, deliberately: no spec layer
+   covers them.  `ostd/specs/sync/rcu/` handles allocation registration
+   and publication identity, and `root.rs` says outright that "physical
+   ownership, reader protection, and detachment evidence must be
+   supplied by the RCU protocol" -- and no protocol is written anywhere
+   under `specs/` (0 hits for `load_read_token` / `RCU_READER_SLOTS`).
+   The discipline modelled here exists only in code, so this grammar is
+   its first written form; that is the gap-report angle recorded in
+   PIPELINE.md, open question 1.
+
    What can go wrong (the safety property modelled here):
 
        a read guard is dropped that no read is outstanding for.
