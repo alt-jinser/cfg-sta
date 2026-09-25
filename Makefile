@@ -1,6 +1,6 @@
 # Build every file, then check the repository gates.
 VFILES := protocol_lib mutex mutex_grammar mutex_param mutex_waitqueue \
-          buffer guard_demo rcu
+          buffer guard_demo rcu rwlock
 SOURCES := $(addsuffix .v,$(VFILES))
 
 all:

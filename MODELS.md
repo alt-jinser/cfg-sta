@@ -1,4 +1,4 @@
-# The contract and its five models
+# The contract and its six models
 
 `protocol_lib.v` proves one theorem, and every model reuses it:
 
@@ -42,6 +42,7 @@ statement of completeness is *false* in general (see the header of
 | `mutex_waitqueue.v` | 527 | `Program`, `U`, `H(o,w)`, `W(q)` | 21 | parameterized by a **queue**; `wake_info` reads the head |
 | `buffer.v` | 307 | `Program`, `Buf(n)`, `Cl` | 10 | parameterized by the **count**; `Get` guarded by `1 <= n` |
 | `rcu.v` | 566 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
+| `rwlock.v` | 281 | `RwRead n`, `RwWrite` | 4 (+2 ε) | count-parameterized, right-linear; **no protocol spec exists**, so both sides come from the implementation (see `PIPELINE.md`, open question 1) |
 
 Two of these parameters are forced, not decorative:
 
@@ -66,9 +67,10 @@ completeness induction (`gen_of_run`); `hand` = proof written out.
 | `mutex_waitqueue` | mech, mech, 1-line | mech + `available` reflexivity cleanup + manual `Wake` cell (2 goals) | 1-line + 1-line | **witness**: 17 cases; `Wake` cell opened by hand |
 | `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **witness**: 7 cases |
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
+| `rwlock` | mech, 1-line, 1-line | mech + 1 availability cleanup | 1-line + 1-line | **witness**: 4 cases |
 
-Obligation 4 is mechanical for four of the five models.  Obligation 7
-is assembled by the library for those four: the model hands it
+Obligation 4 is mechanical for five of the six models.  Obligation 7
+is assembled by the library for those five: the model hands it
 `nil_prod` and `step_prod`, whose case count is the number of real
 transitions; only `rcu.v` (non-right-linear) proves completeness
 itself, because there the choice of production depends on where in the
@@ -85,6 +87,9 @@ list- or guard-carrying nonterminal:
 * `simpl` folds `Nat.leb 1 (length items)` into a raw match on
   `length items`, which loses the production's guard; normalise with
   `cbn [run_from step available]` instead (`buffer.v`).
+* Write `step` NESTED per state rather than as one flat matrix: a flat
+  matrix lets a state row's split on a count leak into another arm and
+  leaves a residual match `cbn` cannot collapse (`rwlock.v`, measured).
 * A model-specific reflected equality (a table keyed by lists, say)
   does **not** get an arm in `finish_goal`: register it with
   `Hint Resolve ... : finish_db` and close its reflexive goals on the
@@ -100,7 +105,7 @@ make check    # build, then the gates below
 
 | gate | expected |
 |---|---|
-| all eight files above | compile clean, no warnings |
+| all nine files above | compile clean, no warnings |
 | `grep "Theorem gen_iff_accepts" *.v` | exactly one hit, `protocol_lib.v` |
 | `grep "Admitted\|admit()\|assume()\|external_body" *.v` | no hits |
 | `git -C ../../vostd status --porcelain` | no tracked change (vostd is read-only for this work) |

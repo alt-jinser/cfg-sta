@@ -27,11 +27,11 @@ Measured across the five models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
-| transition table + error flag | taken from the existing spec | -- |
-| obligations 1–3 (glue) | fully mechanical | 5/5 |
-| obligation 4 (`prod_ok`) | mechanical | 4/5; the fifth needs the net measure |
-| **grammar: `nt` / `prod` / `inv`** | **no -- design work** | count and queue had to be carried by the nonterminal |
-| obligation 7 (grammar completeness) | partly | the library assembles the right-linear case from two witnesses (4 of 5); non-right-linear is hand-written (`rcu.v`) |
+| transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
+| obligations 1–3 (glue) | fully mechanical | 6/6 |
+| obligation 4 (`prod_ok`) | mechanical | 5/6; the sixth needs the net measure |
+| **grammar: `nt` / `prod` / `inv`** | **no -- design work** | the count, the queue and the owner had to be carried by the nonterminal |
+| obligation 7 (grammar completeness) | partly | the library assembles the right-linear case from two witnesses (5 of 6); non-right-linear is hand-written (`rcu.v`) |
 | counterexample enumeration | mechanical | provided by the library (`examples_upto`) |
 
 **Conclusion:** every remaining difficulty sits in *grammar synthesis*;
@@ -48,6 +48,14 @@ obligations.
    grammar-as-documentation vs machine-as-spec a meaningful comparison;
    taking code reintroduces the circularity 1.1 names as its largest
    risk (properties must come from outside the repository's own spec).
+   Provenance is measurable across the three protocols, and only one of
+   them separates cleanly: `mutex_grammar` takes its table from
+   `mutex.rkt` and its grammar from the discipline prose -- two
+   artifacts.  `rcu.v` cites `ostd/src/sync/rcu` for both sides even
+   though `ostd/specs/sync/rcu/` exists, so its table could be
+   re-pointed at the spec; `rwlock.v` has no spec at all, so both sides
+   come from implementation + Verus invariant.  The equivalence is only
+   as informative as that separation.
 2. **When does a protocol need parameters, and when a non-right-linear
    production?**  Draft criterion -- a hypothesis to be validated, not
    a result:
@@ -64,10 +72,12 @@ obligations.
      proof that FIFO cannot be dodged this way.
    * *If both would work, prefer the one that stays right-linear*, since
      a right-linear grammar gets obligation 7 from the library
-     (measured: 4 of 5 models).
+     (measured: 5 of 6 models).
 
-   Validation is cheap and has not been done: apply the checklist to a
-   protocol that is not yet modelled, reading only its transition
-   table, and check the prediction against the model written afterwards.
+   Validation: done once, on `rwlock.v`.  The prediction was committed
+   before any grammar existed (the first commit of that file) and the
+   verdict is in its header -- the shape-level prediction held; what
+   the criterion does not cover is *how* the count gets split into the
+   table (see the constraints in `MODELS.md`).
 3. **Scope.**  Language equivalence only.  Temporal/fairness properties
    stay out, per 1.1's risk 7 ("safety first, fairness later").
