@@ -51,6 +51,8 @@ Require Import Corelib.Lists.ListDef.
 Require Import Stdlib.Arith.PeanoNat.
 Require Import Stdlib.Bool.Bool.
 Require Import Stdlib.Lists.List.
+Require Import Stdlib.ZArith.ZArith.
+Require Import Stdlib.micromega.Lia.
 Open Scope bool_scope.
 
 (** * STA side *)
@@ -214,6 +216,123 @@ Fixpoint ok (s : State) (alpha : list sym) {struct alpha} : Prop :=
   | Se e :: rest  => step s e <> Error /\ ok (step s e) rest
   | Sn A :: rest  => inv A s = true /\ (forall s', Reach s A s' -> ok s' rest)
   end.
+
+(** * Net reader change.
+
+    The [Drop] sitting after the inner [Body] in [PB_cs] is safe only
+    because words the grammar derives never decrease the count.  That
+    is not visible from the shape of a form alone -- a form's
+    nonterminals contribute whatever their words contribute -- so it is
+    measured with a signed net and bounded relative to the form.
+
+    This is the obligation that a boolean/`nat`-only encoding cannot
+    express: the bound has to carry a debt ([Se Drop] contributes -1),
+    so [Z] is what makes it provable.
+
+    The recursion is written with the recursive call as the FIRST
+    argument of [Z.add]/[Z.sub].  With the usual [1 + net tr'] form,
+    [simpl] fires the first match of [Z.add] (its left argument is the
+    literal 1) and reduces the term to a raw match over [Pos], which
+    [lia] cannot see through -- measured, not guessed. *)
+Fixpoint net (tr : list Event) : Z :=
+  match tr with
+  | nil           => 0%Z
+  | Read :: tr'   => Z.add (net tr') 1%Z
+  | Drop :: tr'   => Z.sub (net tr') 1%Z
+  | Update :: tr' => net tr'
+  | Create :: tr' => net tr'
+  end.
+
+Lemma net_app : forall tr1 tr2, net (tr1 ++ tr2) = (net tr1 + net tr2)%Z.
+Proof.
+  induction tr1 as [| e tr1 IH]; intros tr2; simpl; [ reflexivity | ].
+  destruct e; cbn [net]; rewrite IH; lia.
+Qed.
+
+(** Net contributed by a form: terminals count directly, nonterminals
+    by the bound [nt_net] of their own words. *)
+Definition nt_net (A : Nt) : Z := 0%Z.
+
+Fixpoint form_net (alpha : list sym) : Z :=
+  match alpha with
+  | nil             => 0%Z
+  | Se Create :: t  => form_net t
+  | Se Read :: t    => Z.add (form_net t) 1%Z
+  | Se Drop :: t    => Z.sub (form_net t) 1%Z
+  | Se Update :: t  => form_net t
+  | Sn A :: t       => Z.add (nt_net A) (form_net t)
+  end.
+
+(** The per-production half of the bound -- dischargeable mechanically,
+    one case per production constructor. *)
+Lemma prod_net : forall A beta, prod A beta -> (nt_net A <= form_net beta)%Z.
+Proof.
+  (* [simpl] will not unfold [nt_net]: its body ignores the argument,
+     so nothing is "reduced away" by its heuristic. *)
+  intros A beta H; destruct H; unfold nt_net; simpl; lia.
+Qed.
+
+Lemma derives_net : forall alpha tr, derives alpha tr ->
+    (net tr >= form_net alpha)%Z.
+Proof.
+  intros alpha tr H;
+    induction H as [ | e tr IH | A beta tr1 tr2 alpha Hp IH1 IH2 ].
+  - cbn [net form_net]. lia.
+  - destruct e; cbn [net form_net]; lia.
+  - rewrite net_app. cbn [form_net]. pose proof (prod_net A beta Hp). lia.
+Qed.
+
+(** Running a safe word from [Reading k] lands at exactly [k + net]. *)
+Lemma run_reading_net : forall tr k m,
+    run_from (Reading k) tr = Reading m ->
+    (Z.of_nat m = Z.of_nat k + net tr)%Z.
+Proof.
+  induction tr as [| e tr IH]; intros k m H.
+  - simpl in *. inversion H. lia.
+  - destruct e; simpl in *.
+    + pose proof (run_from_err tr). congruence.
+    + pose proof (IH (S k) m H). lia.
+    + destruct k; simpl in H.
+      * pose proof (run_from_err tr). congruence.
+      * pose proof (IH k m H). lia.
+    + pose proof (IH k m H). lia.
+Qed.
+
+Lemma run_reading_shape : forall tr k,
+    run_from (Reading k) tr <> Error ->
+    exists m, run_from (Reading k) tr = Reading m.
+Proof.
+  induction tr as [| e tr IH]; intros k H.
+  - exists k. reflexivity.
+  - destruct e; simpl in *.
+    + pose proof (run_from_err tr). congruence.
+    + exact (IH (S k) H).
+    + destruct k; simpl in *.
+      * exfalso. pose proof (run_from_err tr). congruence.
+      * exact (IH k H).
+    + exact (IH k H).
+Qed.
+
+(** [Reach] from a strictly positive count never lands at [Reading 0].
+    This is what makes the [Drop] of the [PB_cs] production safe inside
+    the per-production obligation below. *)
+Lemma reach_positive : forall n s',
+    Reach (Reading (S n)) Body s' -> exists k, s' = Reading (S k).
+Proof.
+  intros n s' [tr [Hd [Hr Hne]]].
+  assert (Hsafe : run_from (Reading (S n)) tr <> Error)
+    by (rewrite Hr; exact Hne).
+  destruct (run_reading_shape tr (S n) Hsafe) as [m Hm].
+  pose proof (run_reading_net tr (S n) m Hm) as Hz.
+  pose proof (derives_net (Sn Body :: nil) tr Hd) as Hn.
+  unfold nt_net in Hn. simpl in Hn.
+  assert (Hge : (1 <= Z.of_nat m)%Z) by lia.
+  destruct m as [| m']; [ lia | ].
+  (* [subst s'] is wrong here: [Hr] also mentions [s'], and [subst]
+     would rewrite the goal through it instead of through [Hms]. *)
+  assert (Hms : s' = Reading (S m')) by (rewrite <- Hr; exact Hm).
+  rewrite Hms. exists m'. reflexivity.
+Qed.
 
 (** * Word-level characterization of the safety property.
 
