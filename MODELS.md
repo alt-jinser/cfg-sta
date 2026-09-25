@@ -90,11 +90,8 @@ list- or guard-carrying nonterminal:
 
 ```sh
 cd AES/working
-nix develop ./nix -c bash -c '
-  rocq compile protocol_lib.v && rocq compile mutex.v &&
-  rocq compile mutex_grammar.v && rocq compile mutex_param.v &&
-  rocq compile mutex_waitqueue.v && rocq compile buffer.v &&
-  rocq compile guard_demo.v && rocq compile rcu.v'
+make          # build all eight files
+make check    # build, then the gates below
 ```
 
 | gate | expected |
