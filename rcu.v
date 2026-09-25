@@ -50,6 +50,7 @@ Require Import Corelib.Init.Nat.
 Require Import Corelib.Lists.ListDef.
 Require Import Stdlib.Arith.PeanoNat.
 Require Import Stdlib.Bool.Bool.
+Require Import Stdlib.Lists.List.
 Open Scope bool_scope.
 
 (** * STA side *)
@@ -133,24 +134,36 @@ Inductive prod : Nt -> list sym -> Prop :=
 | PB_read : prod Body (Se Read :: Sn Body :: nil)
 | PB_cs   : prod Body (Se Read :: Sn Body :: Se Drop :: Sn Body :: nil).
 
-(** One leftmost expansion step.  Expanding a nonterminal consumes no
-    input: the machine advances only when a [Se] is run. *)
-Inductive expand : list sym -> list sym -> Prop :=
-| Ex_hd : forall A beta gamma,
-    prod A beta -> expand (Sn A :: gamma) (beta ++ gamma)
-| Ex_tl : forall e alpha alpha',
-    expand alpha alpha' -> expand (Se e :: alpha) (Se e :: alpha').
+(** Derivability, in YIELD form: a derivation records how the word
+    splits between a nonterminal and its continuation.
 
-(** An all-terminal form and the word it spells out. *)
-Inductive terminal : list sym -> list Event -> Prop :=
-| T_nil  : terminal nil nil
-| T_cons : forall e alpha w,
-    terminal alpha w -> terminal (Se e :: alpha) (e :: w).
+    This is not cosmetic.  With a rewriting-style relation ("expand the
+    leftmost nonterminal, then another, ...") the split of the word
+    between a production and the rest of the form is never recorded, so
+    every proof needs a separate decomposition lemma to recover it --
+    and the state at which the continuation is run is exactly that
+    missing piece of information.  Recording the split in the rule
+    makes the state threading of the soundness proof direct.
 
+    (The rewriting view, if anyone wants it, is equivalent: leftmost
+    expansion can always be scheduled to match a yield derivation.) *)
 Inductive derives : list sym -> list Event -> Prop :=
-| D_base : forall alpha w, terminal alpha w -> derives alpha w
-| D_step : forall alpha alpha' w,
-    expand alpha alpha' -> derives alpha' w -> derives alpha w.
+| D_base : derives nil nil
+| D_se   : forall e alpha tr,
+    derives alpha tr -> derives (Se e :: alpha) (e :: tr)
+| D_sn   : forall A beta tr1 tr2 alpha,
+    prod A beta -> derives beta tr1 -> derives alpha tr2 ->
+    derives (Sn A :: alpha) (tr1 ++ tr2).
+
+(** One nonterminal step, as a derived form of [D_sn]. *)
+Lemma derives_sn : forall A beta tr,
+    prod A beta -> derives beta tr -> derives (Sn A :: nil) tr.
+Proof.
+  intros A beta tr Hp Hd.
+  assert (H : derives (Sn A :: nil) (tr ++ nil))
+    by exact (D_sn A beta tr nil nil Hp Hd D_base).
+  rewrite app_nil_r in H. exact H.
+Qed.
 
 Definition gen (tr : list Event) : Prop := derives (Sn Program :: nil) tr.
 
@@ -159,6 +172,96 @@ Definition gen (tr : list Event) : Prop := derives (Sn Program :: nil) tr.
     Machine-checked witness for the non-regularity argument in the
     header: every `Reading n` is reachable, so no finite automaton can
     recognize this language (its Myhill-Nerode classes are unbounded). *)
+(** * ============================================================
+    The F1 contract, discovered here in miniature.
+
+    A context-free grammar knows nothing about states, yet its
+    soundness proof has to know that a terminal is safe where it sits.
+    The judgment below carries both -- and its middle clause is the
+    whole point of this file. *)
+
+(** Where a nonterminal may be expanded. *)
+Definition inv (A : Nt) (s : State) : bool :=
+  match A, s with
+  | Program, Uninit  => true
+  | Body,   Reading _ => true
+  | _,      _        => false
+  end.
+
+(** States reachable by running some word derived from [A], WITHOUT
+    faulting on the way.
+
+    Restricting to non-faulting endpoints is deliberate, not a way of
+    hiding the conclusion: the soundness proof only ever applies this
+    clause after it has separately established that the endpoint does
+    not fault (from the obligation on the production), so nothing is
+    assumed that is not also proved -- while the top-level instance
+    stays trivially dischargeable instead of demanding a word-level
+    soundness lemma before the proof can even start. *)
+Definition Reach (s : State) (A : Nt) (s' : State) : Prop :=
+  exists tr, derives (Sn A :: nil) tr /\ run_from s tr = s' /\ s' <> Error.
+
+(** [ok s alpha]: [alpha] is safe to expand and run from [s].
+
+    The clause for a nonterminal checks its TAIL at every state the
+    nonterminal can reach, not at [s].  Checking the tail only at [s]
+    would be wrong: expanding a nonterminal makes it consume input
+    first, so the tail is really run from a later state -- and whether
+    it is still safe there is exactly what has to be guaranteed. *)
+Fixpoint ok (s : State) (alpha : list sym) {struct alpha} : Prop :=
+  match alpha with
+  | nil           => s <> Error
+  | Se e :: rest  => step s e <> Error /\ ok (step s e) rest
+  | Sn A :: rest  => inv A s = true /\ (forall s', Reach s A s' -> ok s' rest)
+  end.
+
+(** * Word-level characterization of the safety property.
+
+    The recognizer is safe from [n] readers exactly when the word never
+    underflows and never mentions [Create].  Both directions of the
+    final equivalence are routed through this: the STA side proves it
+    directly, the CFG side proves it against the same predicate. *)
+Fixpoint safe (n : nat) (tr : list Event) : bool :=
+  match tr with
+  | nil          => true
+  | Read :: tr'  => safe (S n) tr'
+  | Drop :: tr'  => match n with 0 => false | S k => safe k tr' end
+  | Update :: tr' => safe n tr'
+  | Create :: tr' => false
+  end.
+
+Lemma is_err_eq : forall s, is_err s = true <-> s = Error.
+Proof.
+  intros s; destruct s; simpl; split; intros H;
+    try reflexivity; try discriminate.
+Qed.
+
+Lemma accepts_iff : forall tr, accepts tr = true <-> run tr <> Error.
+Proof.
+  intros tr. unfold accepts.
+  destruct (is_err (run tr)) eqn: He; simpl.
+  - split; [ discriminate | intro H; exfalso; apply H;
+      exact (proj1 (is_err_eq (run tr)) He) ].
+  - split; [ intro H; intro Hf; rewrite Hf in He; simpl in He;
+      discriminate | intros _; reflexivity ].
+Qed.
+
+Lemma run_reading_safe : forall tr n,
+    run_from (Reading n) tr <> Error <-> safe n tr = true.
+Proof.
+  induction tr as [| e tr IH]; intros n; simpl.
+  - split; intros H; [ reflexivity | discriminate ].
+  - destruct e.
+    + split; intro H;
+        [ exfalso; apply H; apply run_from_err | discriminate ].
+    + exact (IH (S n)).
+    + destruct n.
+      * split; intro H;
+          [ exfalso; apply H; apply run_from_err | discriminate ].
+      * simpl. exact (IH n).
+    + exact (IH n).
+Qed.
+
 Lemma reading_unbounded : forall n, exists tr, run tr = Reading n.
 Proof.
   induction n as [| n IH].
