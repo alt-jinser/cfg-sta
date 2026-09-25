@@ -308,14 +308,16 @@ Ltac finish_goal :=
 Create HintDb finish_db.
 
 (** Discharge [prod_ok]: split the production (the relation is passed
-    in, since the model names its own), then the model's own types,
-    then peel the right-nested conjunction one layer at a time (each
-    conjunct closes by itself) and hand the tail to [finish_goal]. *)
+    in, since the model names its own), split the model's own types,
+    then peel the right-nested conjunction all the way down and hand
+    every conjunct to [finish_goal].  Peeling without solving first is
+    deliberate: if the head conjunct needs a model-specific rewrite,
+    solving it would stop the peel and leave the tail bundled with it. *)
 Ltac discharge_prod rel cases :=
   intros;
   repeat match goal with [ H : rel _ _ |- _ ] => destruct H end;
   cases;
-  repeat (split; [ solve [ finish_goal ] | ]);
+  repeat split;
   finish_goal.
 
 (** Discharge a table-shaped obligation (kept for models that still
