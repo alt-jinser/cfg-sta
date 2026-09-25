@@ -27,6 +27,7 @@ Measured across the eight models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
+| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) |
 | transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
 | obligations 1–3 (glue) | fully mechanical | 8/8 |
 | obligation 4 (`prod_ok`) | mechanical | 7/8; the eighth needs the net measure |
