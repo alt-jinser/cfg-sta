@@ -23,15 +23,15 @@ Two mismatch shapes are already demonstrated in this repository:
 
 ## The six outputs, and how much of each is mechanical
 
-Measured across the five models (detail in `MODELS.md`):
+Measured across the seven models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
 | transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
-| obligations 1–3 (glue) | fully mechanical | 6/6 |
-| obligation 4 (`prod_ok`) | mechanical | 5/6; the sixth needs the net measure |
+| obligations 1–3 (glue) | fully mechanical | 7/7 |
+| obligation 4 (`prod_ok`) | mechanical | 6/7; the seventh needs the net measure |
 | **grammar: `nt` / `prod` / `inv`** | **no -- design work** | the count, the queue and the owner had to be carried by the nonterminal |
-| obligation 7 (grammar completeness) | partly | the library assembles the right-linear case from two witnesses (5 of 6); non-right-linear is hand-written (`rcu.v`) |
+| obligation 7 (grammar completeness) | partly | the library assembles the right-linear case from two witnesses (6 of 7); non-right-linear is hand-written (`rcu.v`) |
 | counterexample enumeration | mechanical | provided by the library (`examples_upto`) |
 
 **Conclusion:** every remaining difficulty sits in *grammar synthesis*;
@@ -70,7 +70,7 @@ obligations.
 
    * *Read off what `next` inspects to decide whether a step faults.*
      Nothing unbounded ⇒ finite nonterminals, no parameters
-     (`mutex_grammar`).
+     (`mutex_grammar`, `spin`).
    * *If it does inspect something unbounded, is the discipline
      stack-like?*  Pairing / LIFO ⇒ nesting suffices: a non-right-linear
      production over finite nonterminals (`rcu`).  Not stack-like -- a
@@ -80,12 +80,13 @@ obligations.
      proof that FIFO cannot be dodged this way.
    * *If both would work, prefer the one that stays right-linear*, since
      a right-linear grammar gets obligation 7 from the library
-     (measured: 5 of 6 models).
+     (measured: 6 of 7 models).
 
-   Validation: done once, on `rwlock.v`.  The prediction was committed
-   before any grammar existed (the first commit of that file) and the
-   verdict is in its header -- the shape-level prediction held; what
-   the criterion does not cover is *how* the count gets split into the
-   table (see the constraints in `MODELS.md`).
+   Validation: done twice, on `rwlock.v` and `spin.v`.  Each prediction
+   was committed before any grammar existed (the first commit of that
+   file) and the verdict is in its header -- the shape-level prediction
+   held both times; what the criterion does not cover is *how* the
+   count gets split into the table (see the constraints in
+   `MODELS.md`).
 3. **Scope.**  Language equivalence only.  Temporal/fairness properties
    stay out, per 1.1's risk 7 ("safety first, fairness later").

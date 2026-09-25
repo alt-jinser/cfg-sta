@@ -42,6 +42,13 @@
    gen_of_run, no net measure -- and the smallest model so far: two
    surviving cells in step_prod.
 
+   VERDICT (written after the model compiled): CONFIRMED.  Two finite
+   modes, four productions, all right-linear; obligation 4 mechanical;
+   obligation 7 the two witnesses, step_prod with exactly the predicted
+   two cells; no net measure.  Step 1 of the criterion gets its second
+   data point -- `next` reads no unbounded data, the grammar carries no
+   parameter, same branch as mutex_grammar.
+
    Compiles with Rocq 9.1.1:  rocq compile spin.v
 *)
 
@@ -83,5 +90,123 @@ Definition step (s : State) (e : Event) : State :=
   | Error => Error
   end.
 
-(** * Model side, to follow: the grammar, the seven obligations and
-    the verdict on the prediction above. *)
+(** * CFG side *)
+
+Inductive Nt : Type :=
+| NFree
+| NHeld.
+
+Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
+| PR_nilF   : productions NFree nil
+| PR_nilH   : productions NHeld nil
+| PR_lock   : productions NFree (Se Lock :: Sn NHeld :: nil)
+| PR_unlock : productions NHeld (Se Unlock :: Sn NFree :: nil).
+
+Definition available (A : Nt) (s : State) : bool :=
+  match A, s with
+  | NFree, Free   => true
+  | NHeld, Locked => true
+  | _, _          => false
+  end.
+
+(** * The 7 obligations *)
+
+Ltac case_types := case_of State; case_of Event.
+
+Lemma ob_is_error_ok : forall s, is_err s = true <-> s = Error.
+Proof. discharge case_types. Qed.
+
+Lemma ob_init_fault_free : Free <> Error.
+Proof. discriminate. Qed.
+
+Lemma ob_inv_start : available NFree Free = true.
+Proof. reflexivity. Qed.
+
+Lemma ob_prod_ok : forall A beta s,
+    productions A beta -> available A s = true ->
+    ok Error step available productions s beta.
+Proof. discharge_prod productions case_types. Qed.
+
+Lemma run_from_error : forall tr, run_from step Error tr = Error.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
+
+Definition wellformed (tr : list Event) : Prop :=
+  run Free step tr <> Error.
+
+Lemma ob_word_ok_run : forall tr,
+    run Free step tr <> Error <-> wellformed tr.
+Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
+
+(** The two witnesses [gen_of_run] asks for. *)
+Lemma nil_prod : forall A, productions A nil.
+Proof. intros A; destruct A; constructor. Qed.
+
+Lemma step_prod : forall A s e,
+    available A s = true -> step s e <> Error ->
+    exists B, productions A (Se e :: Sn B :: nil) /\
+              available B (step s e) = true.
+Proof.
+  intros A s e Hinv Hne.
+  destruct A; case_types; cbn [run_from step available] in *;
+    try discriminate Hinv;
+    try (exfalso; apply Hne; reflexivity).
+  - (* free / Lock *)
+    exists NHeld. split; [ exact PR_lock | reflexivity ].
+  - (* held / Unlock *)
+    exists NFree. split; [ exact PR_unlock | reflexivity ].
+Qed.
+
+Lemma ob_word_ok_gen : forall tr,
+    wellformed tr -> gen productions NFree tr.
+Proof.
+  intros tr H. unfold wellformed in H.
+  apply (gen_of_run run_from_error nil_prod step_prod NFree Free);
+    [ reflexivity | exact H ].
+Qed.
+
+(** * Assemble the model *)
+
+Definition P : Protocol :=
+  {| st := State; ev := Event; nt := Nt;
+     init := Free; fault := Error; next := step;
+     is_error := is_err;
+     start := NFree; prod := productions; inv := available;
+
+     is_error_ok := ob_is_error_ok;
+     init_fault_free := ob_init_fault_free;
+     inv_start := ob_inv_start;
+     prod_ok := ob_prod_ok;
+     word_ok := wellformed;
+     word_ok_run := ob_word_ok_run;
+     word_ok_gen := ob_word_ok_gen;
+  |}.
+
+Notation runp := (run (init P) (next P)).
+Notation acceptsp := (accepts (init P) (next P) (is_error P)).
+Notation genp := (gen (prod P) (start P)).
+
+(** * What the model says *)
+
+(* acquisition, then release *)
+Example lock_unlock : acceptsp (Lock :: Unlock :: nil) = true.
+Proof. reflexivity. Qed.
+
+(* the trace may end while the lock is held *)
+Example held_prefix : acceptsp (Lock :: nil) = true.
+Proof. reflexivity. Qed.
+
+(* a second acquisition would spin until the release *)
+Example double_lock : acceptsp (Lock :: Lock :: nil) = false.
+Proof. reflexivity. Qed.
+
+(* releasing a lock no guard holds is the misuse case *)
+Example unlock_while_free : acceptsp (Unlock :: nil) = false.
+Proof. reflexivity. Qed.
+
+Example lock_unlock_generated : genp (Lock :: Unlock :: nil).
+Proof. apply (gen_iff_accepts P). reflexivity. Qed.
+
+Example double_lock_not_generated : ~ genp (Lock :: Lock :: nil).
+Proof.
+  intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
+Qed.
