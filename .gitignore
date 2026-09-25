@@ -7,3 +7,6 @@
 
 # direnv / nix
 .direnv/
+
+# lia certificate cache
+.lia.cache
