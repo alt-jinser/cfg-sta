@@ -282,6 +282,11 @@ Ltac finish_goal :=
             `match length items with ... end` because the first argument
             is a literal. *)
          | |- context[if ?b then _ else _] => destruct b; simpl in *
+         (* A reflexive reflected equality sitting in the GOAL: [simpl]
+            cannot reduce it while the argument is still a variable, and
+            no hypothesis arm can see it. *)
+         | |- context[Nat.eqb ?x ?x] => rewrite Nat.eqb_refl
+         | |- context[nat_list_eqb ?x ?x] => rewrite nat_list_eqb_refl
          (* Any other reflected equality (an enum, a string, ...): ask
             the hint database.  Deliberately LAST. *)
          | [ H : ?f ?a ?b = true |- _ ] =>
