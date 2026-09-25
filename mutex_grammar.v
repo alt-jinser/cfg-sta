@@ -99,17 +99,8 @@ Proof. discharge_prod productions case_types. Qed.
 
 (** [Error] really is a sink -- used by the completeness proof below,
     which argues by contradiction from a faulting run. *)
-Lemma step_error_sink : forall e, step Error e = Error.
-Proof. intros e; reflexivity. Qed.
-
 Lemma run_from_error : forall tr, run_from step Error tr = Error.
-Proof.
-  induction tr as [| e tr IH]; [ reflexivity | ].
-  (* [change] first: [simpl] may or may not have reduced [step Error e]
-     yet, and rewriting needs the subterm to still be there. *)
-  change (run_from step (step Error e) tr = Error).
-  rewrite step_error_sink. exact IH.
-Qed.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
 
 (** The word-level predicate: a trace the machine accepts.  For a finite
     state machine with no counter there is no sharper structural form to

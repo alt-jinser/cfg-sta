@@ -49,7 +49,6 @@ Inductive Event : Type :=
 | Flush
 | Close.
 
-Definition Trace := list Event.
 
 Definition is_err (s : State) : bool :=
   match s with Error => true | _ => false end.
@@ -144,15 +143,8 @@ Proof.
   all: try (rewrite pop_length; simpl; apply Nat.eqb_refl).
 Qed.
 
-Lemma step_error_sink : forall e, step Error e = Error.
-Proof. intros e; reflexivity. Qed.
-
 Lemma run_from_error : forall tr, run_from step Error tr = Error.
-Proof.
-  induction tr as [| e tr IH]; [ reflexivity | ].
-  change (run_from step (step Error e) tr = Error).
-  rewrite step_error_sink. exact IH.
-Qed.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
 
 Definition wellformed (tr : list Event) : Prop :=
   run Uninitialized step tr <> Error.

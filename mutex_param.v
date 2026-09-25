@@ -58,7 +58,6 @@ Inductive Event : Type :=
 | TryLockFail    (t : tid)
 | GuardDrop      (t : tid).
 
-Definition Trace := list Event.
 
 Definition is_err (s : State) : bool :=
   match s with Error => true | _ => false end.
@@ -136,18 +135,10 @@ Lemma ob_prod_ok : forall A beta s,
     ok Error step available productions s beta.
 Proof. discharge_prod productions case_types. Qed.
 
-(** [Error] really is a sink -- used below to argue from a faulting
-    run.  Proved here rather than carried by the contract: only the
-    completeness proof needs it, and it is a fact about this table. *)
-Lemma step_error_sink : forall e, step Error e = Error.
-Proof. intros e; reflexivity. Qed.
-
+(** [Error] is a sink in this table; [run_from_sink] turns that into
+    the recognizer-level fact the completeness proof argues from. *)
 Lemma run_from_error : forall tr, run_from step Error tr = Error.
-Proof.
-  induction tr as [| e tr IH]; [ reflexivity | ].
-  change (run_from step (step Error e) tr = Error).
-  rewrite step_error_sink. exact IH.
-Qed.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
 
 Definition wellformed (tr : list Event) : Prop :=
   run Uninitialized step tr <> Error.

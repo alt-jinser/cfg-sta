@@ -90,7 +90,6 @@ Inductive Event : Type :=
 | Wait           (t : tid)
 | Wake           (t : tid).
 
-Definition Trace := list Event.
 
 Definition is_err (s : State) : bool :=
   match s with Error => true | _ => false end.
@@ -198,6 +197,30 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
 | PW_wake : forall h tl t, Nat.eqb t h = true ->
     productions (W (h :: tl)) (Se (Wake t) :: Sn (H t tl) :: nil).
 
+(* Queue-shaped tables need equality on lists of nats -- only this
+   model needs it, so it lives here (registered with [finish_db]). *)
+Fixpoint nat_list_eqb (a b : list nat) : bool :=
+  match a, b with
+  | nil, nil => true
+  | x :: xs, y :: ys => Nat.eqb x y && nat_list_eqb xs ys
+  | _, _ => false
+  end.
+
+Lemma nat_list_eqb_true : forall a b, nat_list_eqb a b = true -> a = b.
+Proof.
+  induction a as [| x xs IH]; destruct b as [| y ys]; simpl; intros H;
+    try discriminate; try reflexivity.
+  rewrite Bool.andb_true_iff in H; destruct H as [Hxy Hrest].
+  rewrite Nat.eqb_eq in Hxy; subst. apply IH in Hrest; subst. reflexivity.
+Qed.
+
+Lemma nat_list_eqb_refl : forall a, nat_list_eqb a a = true.
+Proof.
+  induction a as [| x xs IH]; simpl; [ reflexivity | ].
+  rewrite Nat.eqb_refl; rewrite IH; reflexivity.
+Qed.
+
+Hint Resolve nat_list_eqb_true nat_list_eqb_refl : finish_db.
 Definition available (A : Nt) (s : State) : bool :=
   match A, s with
   | Program, Uninitialized  => true
@@ -225,6 +248,10 @@ Lemma ob_prod_ok : forall A beta s,
     ok Error step available productions s beta.
 Proof.
   discharge_prod productions case_types.
+  (* Re-establishing [available] at the target nonterminal needs this
+     model's own reflexivity lemma -- the library no longer knows the
+     data type.  Same shape as buffer's two [available] cleanups. *)
+  all: try (rewrite nat_list_eqb_refl; reflexivity).
   (* The [Wake] cell, by hand: [simpl] folded
      [nat_list_eqb (h :: tl) queue] into a match on the queue, and both
      of its conjuncts read [wake_info] -- a match, not an [if], so the
@@ -235,20 +262,14 @@ Proof.
         destruct (Nat.eqb h y) eqn:Hw;
         [ | simpl in H1; discriminate H1 ]).
   all: finish_goal.
+  (* ...including the conjunct the [Wake] split leaves behind. *)
+  all: try (rewrite nat_list_eqb_refl; reflexivity).
 Qed.
 
-(** [Error] really is a sink -- used by the completeness proof below to
-    argue from a faulting run.  A fact about this table, so it lives
-    here rather than in the contract. *)
-Lemma step_error_sink : forall e, step Error e = Error.
-Proof. intros e; reflexivity. Qed.
-
+(** [Error] is a sink in this table; [run_from_sink] turns that into
+    the recognizer-level fact the completeness proof argues from. *)
 Lemma run_from_error : forall tr, run_from step Error tr = Error.
-Proof.
-  induction tr as [| e tr IH]; [ reflexivity | ].
-  change (run_from step (step Error e) tr = Error).
-  rewrite step_error_sink. exact IH.
-Qed.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
 
 Definition wellformed (tr : list Event) : Prop :=
   run Uninitialized step tr <> Error.

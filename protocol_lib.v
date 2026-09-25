@@ -111,6 +111,16 @@ Fixpoint run_from (s : St) (tr : list E) : St :=
   | e :: es => run_from (next s e) es
   end.
 
+(** A fault state that absorbs every event makes the recognizer absorb
+    it too.  The completeness proofs argue from this; a model supplies
+    only the one-line fact about its own table. *)
+Lemma run_from_sink : forall s, (forall e, next s e = s) ->
+    forall tr, run_from s tr = s.
+Proof.
+  intros s Hs tr; induction tr as [| e tr IH]; [ reflexivity | ].
+  change (run_from (next s e) tr = s). rewrite Hs. exact IH.
+Qed.
+
 Definition run (tr : list E) : St := run_from init tr.
 
 Definition accepts (tr : list E) : bool := negb (is_error (run tr)).
@@ -184,6 +194,7 @@ End WithTypes.
 (* The types are inferred from the model's own fields, so the record
    reads [ok fault next inv prod s beta] rather than repeating them. *)
 Arguments run_from {St E} _ _ _.
+Arguments run_from_sink {St E} _ _ _ _.
 Arguments run {St E} _ _ _.
 Arguments accepts {St E} _ _ _ _.
 Arguments derives {E Nt} _ _ _.
@@ -199,27 +210,6 @@ Arguments gen {E Nt} _ _ _.
 Arguments Reach {St E Nt} _ _ _ _ _ _.
 Arguments ok {St E Nt} _ _ _ _ _ _.
 
-(** Queue-shaped tables need equality on lists of nats. *)
-Fixpoint nat_list_eqb (a b : list nat) : bool :=
-  match a, b with
-  | nil, nil => true
-  | x :: xs, y :: ys => Nat.eqb x y && nat_list_eqb xs ys
-  | _, _ => false
-  end.
-
-Lemma nat_list_eqb_true : forall a b, nat_list_eqb a b = true -> a = b.
-Proof.
-  induction a as [| x xs IH]; destruct b as [| y ys]; simpl; intros H;
-    try discriminate; try reflexivity.
-  rewrite Bool.andb_true_iff in H; destruct H as [Hxy Hrest].
-  rewrite Nat.eqb_eq in Hxy; subst. apply IH in Hrest; subst. reflexivity.
-Qed.
-
-Lemma nat_list_eqb_refl : forall a, nat_list_eqb a a = true.
-Proof.
-  induction a as [| x xs IH]; simpl; [ reflexivity | ].
-  rewrite Nat.eqb_refl; rewrite IH; reflexivity.
-Qed.
 
 (** * The contract *)
 Record Protocol : Type := mk {
@@ -269,16 +259,14 @@ Ltac case_of T :=
 Ltac finish_goal :=
   simpl in *;
   repeat match goal with
-         (* A boolean guard sitting in the GOAL must be split BEFORE
-            the hypothesis arms: those consume their equation by
+         (* An [eqb] guard sitting in the GOAL must be split BEFORE the
+            hypothesis arms: those consume their equation by
             substitution, and the resulting `false` branch would then
             have no discriminating hypothesis left. *)
          | |- context[if Nat.eqb ?a ?b then _ else _] =>
              destruct (Nat.eqb a b); simpl in *
          | [ H : _ && _ = true |- _ ] =>
              rewrite Bool.andb_true_iff in H; destruct H
-         | [ H : nat_list_eqb _ _ = true |- _ ] =>
-             apply nat_list_eqb_true in H; subst
          | [ H : Nat.eqb _ _ = true |- _ ] =>
              first [ rewrite Nat.eqb_eq in H; subst | rewrite H; clear H ]
          | [ H : Nat.leb _ _ = true |- _ ] => rewrite H; clear H
@@ -287,11 +275,6 @@ Ltac finish_goal :=
             `match length items with ... end` because the first argument
             is a literal. *)
          | |- context[if ?b then _ else _] => destruct b; simpl in *
-         (* A reflexive reflected equality sitting in the GOAL: [simpl]
-            cannot reduce it while the argument is still a variable, and
-            no hypothesis arm can see it. *)
-         | |- context[Nat.eqb ?x ?x] => rewrite Nat.eqb_refl
-         | |- context[nat_list_eqb ?x ?x] => rewrite nat_list_eqb_refl
          (* Any other reflected equality (an enum, a string, ...): ask
             the hint database.  Deliberately LAST. *)
          | [ H : ?f ?a ?b = true |- _ ] =>
@@ -303,7 +286,7 @@ Ltac finish_goal :=
   try rewrite Nat.eqb_refl;
   try discriminate;
   try congruence;
-  try auto;
+  try (auto with finish_db);
   try reflexivity;
   try contradiction;
   try (split; intros; solve [ discriminate | congruence | reflexivity ]);

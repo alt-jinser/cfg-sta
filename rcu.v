@@ -103,8 +103,6 @@ Definition step (s : State) (e : Event) : State :=
   | _, _             => Error
   end.
 
-Lemma step_error_sink : forall e, step Error e = Error.
-Proof. intros e; reflexivity. Qed.
 
 (** * Recognizer: the library's, instantiated here.
 
@@ -125,11 +123,7 @@ Proof.
 Qed.
 
 Lemma run_from_err : forall tr, run_from Error tr = Error.
-Proof.
-  induction tr as [| e tr IH]; [ reflexivity | ].
-  (* [simpl] has already folded [step Error e] to [Error]. *)
-  simpl. exact IH.
-Qed.
+Proof. apply run_from_sink. intros e; reflexivity. Qed.
 
 (** * CFG side: nonterminals and productions *)
 

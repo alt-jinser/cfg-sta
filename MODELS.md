@@ -62,7 +62,7 @@ one-tactic proof; `hand` = proof written out.
 |---|---|---|---|---|
 | `mutex_grammar` | mech, mech, 1-line | mech (all 13) | 1-line + 1-line | **hand**: `gen_of_run`, 10 cases |
 | `mutex_param` | mech, mech, 1-line | mech (guards split by `finish_goal`) | 1-line + 1-line | **hand**: 10 cases, 2 guard splits |
-| `mutex_waitqueue` | mech, mech, 1-line | mech + manual `Wake` cell (2 goals) | 1-line + 1-line | **hand**: 17 cases; `Wake` cell opened by hand |
+| `mutex_waitqueue` | mech, mech, 1-line | mech + `available` reflexivity cleanup + manual `Wake` cell (2 goals) | 1-line + 1-line | **hand**: 17 cases; `Wake` cell opened by hand |
 | `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **hand**: 7 cases |
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
 
@@ -71,7 +71,7 @@ hand-written in all five, and is the only obligation whose difficulty
 tracks the grammar (right-linear ⇒ per-event induction; non-right-linear
 ⇒ a word cut).
 
-Two constraints on the automation, for anyone adding a model with a
+Constraints on the automation, for anyone adding a model with a
 list- or guard-carrying nonterminal:
 
 * Do not point `case_of` at a `list tid`: `destruct` on a list
@@ -81,6 +81,10 @@ list- or guard-carrying nonterminal:
 * `simpl` folds `Nat.leb 1 (length items)` into a raw match on
   `length items`, which loses the production's guard; normalise with
   `cbn [run_from step available]` instead (`buffer.v`).
+* A model-specific reflected equality (a table keyed by lists, say)
+  does **not** get an arm in `finish_goal`: register it with
+  `Hint Resolve ... : finish_db` and close its reflexive goals on the
+  model side (`mutex_waitqueue.v`).  The closer stays generic.
 
 ## Build and gates
 
