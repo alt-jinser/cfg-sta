@@ -29,11 +29,28 @@ separately before applying the clause, while the top-level instance
 stays trivially dischargeable.
 
 **`nt : Type` may be infinite.** FIFO with identities is not
-context-free: `Wait t1..tn .. Wake t1..tn` reduces to `{ww}` by
-regular intersection and homomorphism, so `mutex_waitqueue.v` indexes
-nonterminals by the queue. With finite `nt` the contract is a
-classical CFG. The reduction is standard language theory and is not
-yet mechanized.
+context-free, so `mutex_waitqueue.v` indexes nonterminals by the queue;
+with finite `nt` the contract is a classical CFG. Reduction, in full so
+it can be checked: let R be the regular set
+
+    Create LockAcquire 0 Wait* GuardDrop 0 (Wake _ GuardDrop _)*
+
+and h the homomorphism `Wait t ↦ t`, `Wake t ↦ t`, everything else
+`↦ ε`. The machine accepts a trace of shape R exactly when its two id
+sequences agree (a mismatched `Wake` faults, `wake_info` returns
+`None`), so `h(L ∩ R) = { ww | w ∈ tid* }`; restricting `w` to the
+tids {1, 2} (0 is the owner) yields the classical `{ww}`, which is not
+context-free. CFLs are closed under regular intersection and
+homomorphism, so L is not CFL either. Standard language theory; not
+mechanized.
+
+The converse bound matters just as much: with an infinite `nt` and
+`prod` as a relation the grammar family is *strictly* larger than CFL
+-- one nonterminal per machine configuration and one production per
+transition already encodes arbitrary computation. So `gen_iff_accepts`
+is a CFG equivalence only in the finite-`nt` case; in general the
+contract guarantees that two relations agree, and says nothing about
+the family being context-free.
 
 **Rewritten in place, no parallel contract.** While the contract is
 an experiment, two side by side double the proof surface and add no
