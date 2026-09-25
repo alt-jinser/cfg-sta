@@ -189,6 +189,41 @@ Fixpoint ok (s : St) (alpha : list (sym Nt E)) {struct alpha} : Prop :=
   | Sn A :: rest  => inv A s = true /\ (forall s', Reach s A s' -> ok s' rest)
   end.
 
+(** Completeness for RIGHT-LINEAR grammars: every production is either
+    [epsilon] or [Se e :: Sn B :: nil] -- one terminal, then one
+    nonterminal.  For those, which production applies depends only on
+    (nonterminal, state, event), so the model supplies that choice as
+    a witness and the induction plus the assembly of the derivation
+    happen here.
+
+    Three witnesses: the fault state absorbs, every nonterminal has an
+    epsilon production, and every non-faulting step has a production
+    for its event.  A grammar that is NOT right-linear cannot use this
+    -- choosing the production there depends on where in the word the
+    count bottoms out (see rcu.v, [Body -> Read Body Drop Body]) --
+    and proves completeness itself. *)
+Lemma gen_of_run :
+    (forall tr, run_from fault tr = fault) ->
+    (forall A, prod A nil) ->
+    (forall A s e, inv A s = true -> next s e <> fault ->
+       exists B, prod A (Se e :: Sn B :: nil) /\ inv B (next s e) = true) ->
+    forall A s tr, inv A s = true -> run_from s tr <> fault ->
+    derives (Sn A :: nil) tr.
+Proof.
+  intros Hsink Hnil Hstep.
+  intros A s tr. revert A s.
+  induction tr as [| e tr IH]; intros A s Hinv Hrun.
+  - exact (derives_sn A nil nil (Hnil A) derives_nil).
+  - simpl in Hrun.
+    assert (Hne : next s e <> fault).
+    { intro Hf. rewrite Hf in Hrun. rewrite Hsink in Hrun.
+      exact (Hrun eq_refl). }
+    destruct (Hstep A s e Hinv Hne) as [B [Hprod HinvB]].
+    refine (derives_sn A (Se e :: Sn B :: nil) (e :: tr) Hprod _).
+    apply D_se.
+    exact (IH B (next s e) HinvB Hrun).
+Qed.
+
 End WithTypes.
 
 (* The types are inferred from the model's own fields, so the record
@@ -206,6 +241,10 @@ Arguments derives_se {E Nt} _ _ _ _ _.
 Arguments D_base {E Nt prod}.
 Arguments D_se {E Nt prod} _ _ _ _.
 Arguments D_sn {E Nt prod} _ _ _ _ _ _ _ _.
+
+(* Model data is inferable from the witness lemmas, so a model writes
+   [gen_of_run run_from_error nil_prod step_prod A s]. *)
+Arguments gen_of_run {St E Nt} {fault next inv prod} _ _ _ _ _ _ _ _.
 Arguments gen {E Nt} _ _ _.
 Arguments Reach {St E Nt} _ _ _ _ _ _.
 Arguments ok {St E Nt} _ _ _ _ _ _.
@@ -405,6 +444,7 @@ Proof.
   intros tr H. apply accepts_iff in H.
   apply word_ok_gen. apply word_ok_run. exact H.
 Qed.
+
 
 (** * The headline theorem.  Free for every model. *)
 Theorem gen_iff_accepts : forall tr, genp tr <-> acceptsp tr = true.

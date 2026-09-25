@@ -287,187 +287,109 @@ Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
     The queue itself is NOT destructed here: [case_of] must not touch a
     [list tid] (a `repeat` would not terminate), so the one cell that
     needs the queue -- `Waking q, Wake t` -- opens it by hand. *)
-Lemma gen_of_run : forall A s tr,
-    available A s = true -> run_from step s tr <> Error ->
-    derives productions (Sn A :: nil) tr.
+(** The two witnesses [gen_of_run] asks for; the library owns the
+    induction. *)
+Lemma nil_prod : forall A, productions A nil.
+Proof. intros A; destruct A; constructor. Qed.
+
+Lemma step_prod : forall A s e,
+    available A s = true -> step s e <> Error ->
+    exists B, productions A (Se e :: Sn B :: nil) /\
+              available B (step s e) = true.
 Proof.
-  intros A s tr. revert A s.
-  induction tr as [| e tr IH]; intros A s Hinv Hrun.
-  - destruct A as [| | o w | q].
-    + exact (derives_sn productions Program nil nil PR_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions U nil nil PU_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions (H o w) nil nil (PH_nil o w)
-               (derives_nil productions)).
-    + exact (derives_sn productions (W q) nil nil (PW_nil q)
-               (derives_nil productions)).
-  - cbn [run_from step] in Hrun.
-    assert (Hne : step s e <> Error).
-    { intro Hf. rewrite Hf in Hrun. rewrite run_from_error in Hrun.
-      exact (Hrun eq_refl). }
-    destruct A as [| | o w | q]; case_types;
-      cbn [run_from step available] in *;
-      (* [available] is a conjunction of two reflected equalities:
-         split it, then push both into the goal. *)
-      repeat match goal with
-             | [ H : _ && _ = true |- _ ] =>
-                 rewrite Bool.andb_true_iff in H; destruct H
-             end;
-      repeat match goal with
-             | [ H : Nat.eqb ?x ?y = true |- _ ] =>
-                 rewrite Nat.eqb_eq in H; rewrite H; clear H
-             | [ H : nat_list_eqb ?x ?y = true |- _ ] =>
-                 apply nat_list_eqb_true in H; rewrite H; clear H
-             end;
-      try discriminate Hinv;
-      (* the guards live in [Hrun] -- the goal is a [derives] statement
-         and has no [if] -- so the split must look at hypotheses too *)
-      repeat match goal with
-             | [ H : context[if ?b then _ else _] |- _ ] =>
-                 destruct b eqn:Hb; cbn [run_from step] in *
-             | |- context[if ?b then _ else _] =>
-                 destruct b eqn:Hb; cbn [run_from step] in *
-             end;
-      try (exfalso; apply Hrun; apply run_from_error).
-    + (* Program / Uninitialized / Create *)
-      refine (derives_sn productions Program (Se Create :: Sn U :: nil)
-                (Create :: tr) PR_body _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockCall *)
-      refine (derives_sn productions U (Se (LockCall t) :: Sn U :: nil)
-                (LockCall t :: tr) (PU_call t) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockAcquire *)
-      refine (derives_sn productions U
-                (Se (LockAcquire t) :: Sn (H t nil) :: nil)
-                (LockAcquire t :: tr) (PU_acq t) _).
-      apply derives_se.
-      apply (IH (H t nil) (Held t nil));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* U / Unlocked / TryLockCall, within budget *)
-      refine (derives_sn productions U
-                (Se (TryLockCall t n) :: Sn U :: nil)
-                (TryLockCall t n :: tr) (PU_tryc t n Hb) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / TryLockSuccess *)
-      refine (derives_sn productions U
-                (Se (TryLockSuccess t) :: Sn (H t nil) :: nil)
-                (TryLockSuccess t :: tr) (PU_succ t) _).
-      apply derives_se.
-      apply (IH (H t nil) (Held t nil));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* U / Unlocked / TryLockFail *)
-      refine (derives_sn productions U (Se (TryLockFail t) :: Sn U :: nil)
-                (TryLockFail t :: tr) (PU_tryf t) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* H owner waiters / Held / LockCall *)
-      refine (derives_sn productions (H owner waiters)
-                (Se (LockCall t) :: Sn (H owner waiters) :: nil)
-                (LockCall t :: tr) (PH_call owner waiters t) _).
-      apply derives_se.
-      apply (IH (H owner waiters) (Held owner waiters));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* H owner waiters / Held / TryLockCall, within budget *)
-      refine (derives_sn productions (H owner waiters)
-                (Se (TryLockCall t n) :: Sn (H owner waiters) :: nil)
-                (TryLockCall t n :: tr) (PH_tryc owner waiters t n Hb) _).
-      apply derives_se.
-      apply (IH (H owner waiters) (Held owner waiters));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* H owner waiters / Held / TryLockFail *)
-      refine (derives_sn productions (H owner waiters)
-                (Se (TryLockFail t) :: Sn (H owner waiters) :: nil)
-                (TryLockFail t :: tr) (PH_tryf owner waiters t) _).
-      apply derives_se.
-      apply (IH (H owner waiters) (Held owner waiters));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* H owner waiters / Held / GuardDrop, by the owner.
-         The production's terminal is [GuardDrop owner], so the event's
-         thread id has to be aligned with the owner first. *)
-      rewrite Nat.eqb_eq in Hb. rewrite Hb.
-      refine (derives_sn productions (H owner waiters)
-                (Se (GuardDrop owner) :: Sn (W waiters) :: nil)
-                (GuardDrop owner :: tr) (PH_drop owner waiters) _).
-      apply derives_se.
-      apply (IH (W waiters) (Waking waiters));
-        [ simpl; rewrite ?nat_list_eqb_refl; reflexivity | exact Hrun ].
-    + (* H owner waiters / Held / Wait *)
-      refine (derives_sn productions (H owner waiters)
-                (Se (Wait t) :: Sn (H owner (waiters ++ (t :: nil))) :: nil)
-                (Wait t :: tr) (PH_wait owner waiters t) _).
-      apply derives_se.
-      apply (IH (H owner (waiters ++ (t :: nil)))
-                (Held owner (waiters ++ (t :: nil))));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* W queue / Waking / LockCall *)
-      refine (derives_sn productions (W queue)
-                (Se (LockCall t) :: Sn (W queue) :: nil)
-                (LockCall t :: tr) (PW_call queue t) _).
-      apply derives_se.
-      apply (IH (W queue) (Waking queue));
-        [ simpl; rewrite ?nat_list_eqb_refl; reflexivity | exact Hrun ].
-    + (* W queue / Waking / LockAcquire (barging keeps the queue) *)
-      refine (derives_sn productions (W queue)
-                (Se (LockAcquire t) :: Sn (H t queue) :: nil)
-                (LockAcquire t :: tr) (PW_acq queue t) _).
-      apply derives_se.
-      apply (IH (H t queue) (Held t queue));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* W queue / Waking / TryLockCall, within budget *)
-      refine (derives_sn productions (W queue)
-                (Se (TryLockCall t n) :: Sn (W queue) :: nil)
-                (TryLockCall t n :: tr) (PW_tryc queue t n Hb) _).
-      apply derives_se.
-      apply (IH (W queue) (Waking queue));
-        [ simpl; rewrite ?nat_list_eqb_refl; reflexivity | exact Hrun ].
-    + (* W queue / Waking / TryLockSuccess *)
-      refine (derives_sn productions (W queue)
-                (Se (TryLockSuccess t) :: Sn (H t queue) :: nil)
-                (TryLockSuccess t :: tr) (PW_succ queue t) _).
-      apply derives_se.
-      apply (IH (H t queue) (Held t queue));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
-    + (* W queue / Waking / TryLockFail *)
-      refine (derives_sn productions (W queue)
-                (Se (TryLockFail t) :: Sn (W queue) :: nil)
-                (TryLockFail t :: tr) (PW_tryf queue t) _).
-      apply derives_se.
-      apply (IH (W queue) (Waking queue));
-        [ simpl; rewrite ?nat_list_eqb_refl; reflexivity | exact Hrun ].
-    + (* W queue / Waking / Wake t -- the queue decides, and it has to be
-         opened by hand: [wake_info] is a match, not an [if], so the
-         chain above never saw a guard in this cell. *)
-      destruct queue as [| h tl];
-        [ simpl in Hrun; exfalso; apply Hrun; apply run_from_error | ].
-      simpl in Hrun.
-      destruct (Nat.eqb t h) eqn:Hb; simpl in Hrun;
-        [ | exfalso; apply Hrun; apply run_from_error ].
-      refine (derives_sn productions (W (h :: tl))
-                (Se (Wake t) :: Sn (H t tl) :: nil)
-                (Wake t :: tr) (PW_wake h tl t Hb) _).
-      apply derives_se.
-      apply (IH (H t tl) (Held t tl));
-        [ simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity
-        | exact Hrun ].
+  intros A s e Hinv Hne.
+  destruct A as [| | o w | q]; case_types;
+    cbn [run_from step available] in *;
+    (* [available] is a conjunction of two reflected equalities:
+       split it, then push both into the goal. *)
+    repeat match goal with
+           | [ H : _ && _ = true |- _ ] =>
+               rewrite Bool.andb_true_iff in H; destruct H
+           end;
+    repeat match goal with
+           | [ H : Nat.eqb ?x ?y = true |- _ ] =>
+               rewrite Nat.eqb_eq in H; rewrite H; clear H
+           | [ H : nat_list_eqb ?x ?y = true |- _ ] =>
+               apply nat_list_eqb_true in H; rewrite H; clear H
+           end;
+    try discriminate Hinv;
+    (* the guards live in [Hne] and in the goal's [step s e] *)
+    repeat match goal with
+           | [ H : context[if ?b then _ else _] |- _ ] =>
+               destruct b eqn:Hb; cbn [run_from step] in *
+           | |- context[if ?b then _ else _] =>
+               destruct b eqn:Hb; cbn [run_from step] in *
+           end;
+    try (exfalso; apply Hne; reflexivity).
+  - (* Program / Uninitialized / Create *)
+    exists U. split; [ exact PR_body | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* U / Unlocked / LockCall *)
+    exists U. split; [ exact (PU_call t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* U / Unlocked / LockAcquire *)
+    exists (H t nil). split; [ exact (PU_acq t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* U / Unlocked / TryLockCall, within budget *)
+    exists U. split; [ exact (PU_tryc t n Hb) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* U / Unlocked / TryLockSuccess *)
+    exists (H t nil). split; [ exact (PU_succ t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* U / Unlocked / TryLockFail *)
+    exists U. split; [ exact (PU_tryf t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* H owner waiters / Held / LockCall *)
+    exists (H owner waiters). split; [ exact (PH_call owner waiters t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* H owner waiters / Held / TryLockCall, within budget *)
+    exists (H owner waiters). split;
+      [ exact (PH_tryc owner waiters t n Hb) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* H owner waiters / Held / TryLockFail *)
+    exists (H owner waiters). split; [ exact (PH_tryf owner waiters t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* H owner waiters / Held / GuardDrop, by the owner: the
+       production's terminal is [GuardDrop owner], so the event's id
+       has to be aligned first. *)
+    pose proof (proj1 (Nat.eqb_eq t owner) Hb) as Hte. rewrite Hte.
+    exists (W waiters). split; [ exact (PH_drop owner waiters) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* H owner waiters / Held / Wait *)
+    exists (H owner (waiters ++ t :: nil)). split;
+      [ exact (PH_wait owner waiters t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / LockCall *)
+    exists (W queue). split; [ exact (PW_call queue t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / LockAcquire (barging keeps the queue) *)
+    exists (H t queue). split; [ exact (PW_acq queue t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / TryLockCall, within budget *)
+    exists (W queue). split; [ exact (PW_tryc queue t n Hb) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / TryLockSuccess *)
+    exists (H t queue). split; [ exact (PW_succ queue t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / TryLockFail *)
+    exists (W queue). split; [ exact (PW_tryf queue t) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
+  - (* W queue / Waking / Wake t -- the queue decides, and it has to
+       be opened by hand: [wake_info] is a match, not an [if], so the
+       chain above never saw a guard in this cell. *)
+    destruct queue as [| h tl];
+      [ simpl in Hne; exfalso; apply Hne; reflexivity | ].
+    simpl in *.
+    destruct (Nat.eqb t h) eqn:Hb; simpl in *;
+      [ | exfalso; apply Hne; reflexivity ].
+    exists (H t tl). split; [ exact (PW_wake h tl t Hb) | ].
+    simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
 Qed.
 
 Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
 Proof.
   intros tr H. unfold wellformed in H.
-  apply (gen_of_run Program Uninitialized); [ reflexivity | exact H ].
+  apply (gen_of_run run_from_error nil_prod step_prod Program Uninitialized); [ reflexivity | exact H ].
 Qed.
 
 (** * Assemble the model *)

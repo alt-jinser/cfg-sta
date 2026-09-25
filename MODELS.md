@@ -56,20 +56,24 @@ Two of these parameters are forced, not decorative:
 
 `mech` = closed by `discharge`/`discharge_prod` (case analysis over the
 model's own types plus `finish_goal`); `1-line` = a definition or a
-one-tactic proof; `hand` = proof written out.
+one-tactic proof; `witness` = two lemmas handed to the library's
+completeness induction (`gen_of_run`); `hand` = proof written out.
 
 | model | 1–3 | 4 `prod_ok` | 5–6 `word_ok`/`word_ok_run` | 7 `word_ok_gen` |
 |---|---|---|---|---|
-| `mutex_grammar` | mech, mech, 1-line | mech (all 13) | 1-line + 1-line | **hand**: `gen_of_run`, 10 cases |
-| `mutex_param` | mech, mech, 1-line | mech (guards split by `finish_goal`) | 1-line + 1-line | **hand**: 10 cases, 2 guard splits |
-| `mutex_waitqueue` | mech, mech, 1-line | mech + `available` reflexivity cleanup + manual `Wake` cell (2 goals) | 1-line + 1-line | **hand**: 17 cases; `Wake` cell opened by hand |
-| `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **hand**: 7 cases |
+| `mutex_grammar` | mech, mech, 1-line | mech (all 13) | 1-line + 1-line | **witness**: `nil_prod` + `step_prod`, 10 cases |
+| `mutex_param` | mech, mech, 1-line | mech (guards split by `finish_goal`) | 1-line + 1-line | **witness**: 10 cases, 2 guard splits |
+| `mutex_waitqueue` | mech, mech, 1-line | mech + `available` reflexivity cleanup + manual `Wake` cell (2 goals) | 1-line + 1-line | **witness**: 17 cases; `Wake` cell opened by hand |
+| `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **witness**: 7 cases |
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
 
-Obligation 4 is mechanical for four of the five models; obligation 7 is
-hand-written in all five, and is the only obligation whose difficulty
-tracks the grammar (right-linear ⇒ per-event induction; non-right-linear
-⇒ a word cut).
+Obligation 4 is mechanical for four of the five models.  Obligation 7
+is assembled by the library for those four: the model hands it
+`nil_prod` and `step_prod`, whose case count is the number of real
+transitions; only `rcu.v` (non-right-linear) proves completeness
+itself, because there the choice of production depends on where in the
+word the count bottoms out.  It remains the obligation whose difficulty
+tracks the grammar.
 
 Constraints on the automation, for anyone adding a model with a
 list- or guard-carrying nonterminal:

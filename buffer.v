@@ -158,88 +158,58 @@ Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
     raw match on [length items], and then the [Get] production's guard
     could not be reconstructed -- [cbn] with an explicit delta list
     leaves [Nat.leb] alone, so the guard survives as written. *)
-Lemma gen_of_run : forall A s tr,
-    available A s = true -> run_from step s tr <> Error ->
-    derives productions (Sn A :: nil) tr.
+(** The two witnesses [gen_of_run] asks for; the library owns the
+    induction.  Normalisation stays [cbn ...] -- [simpl] would fold
+    [Nat.leb 1 (length items)] into a raw match and lose the guard. *)
+Lemma nil_prod : forall A, productions A nil.
+Proof. intros A; destruct A; constructor. Qed.
+
+Lemma step_prod : forall A s e,
+    available A s = true -> step s e <> Error ->
+    exists B, productions A (Se e :: Sn B :: nil) /\
+              available B (step s e) = true.
 Proof.
-  intros A s tr. revert A s.
-  induction tr as [| e tr IH]; intros A s Hinv Hrun.
-  - destruct A as [| n | ].
-    + exact (derives_sn productions Program nil nil PR_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions (Buf n) nil nil (PB_nil n)
-               (derives_nil productions)).
-    + exact (derives_sn productions Cl nil nil PC_nil
-               (derives_nil productions)).
-  - cbn [run_from step] in Hrun.
-    assert (Hne : step s e <> Error).
-    { intro Hf. rewrite Hf in Hrun. rewrite run_from_error in Hrun.
-      exact (Hrun eq_refl). }
-    destruct A as [| n | ]; case_types; cbn [run_from step available] in *;
-      try (rewrite Nat.eqb_eq in Hinv; subst);
-      try discriminate Hinv;
-      repeat match goal with
-             | [ H : context[if ?b then _ else _] |- _ ] =>
-                 destruct b eqn:Hb; cbn [run_from step] in *
-             | |- context[if ?b then _ else _] =>
-                 destruct b eqn:Hb; cbn [run_from step] in *
-             end;
-      try (exfalso; apply Hrun; apply run_from_error).
-    + (* Program / Uninitialized / Setup *)
-      refine (derives_sn productions Program
-                (Se Setup :: Sn (Buf 0) :: nil)
-                (Setup :: tr) PR_setup _).
-      apply derives_se.
-      apply (IH (Buf 0) (Buffered nil));
-        [ cbn [available]; apply Nat.eqb_refl | exact Hrun ].
-    + (* Buf (length items) / Buffered items / Put x *)
-      refine (derives_sn productions (Buf (length items))
-                (Se (Put x) :: Sn (Buf (S (length items))) :: nil)
-                (Put x :: tr) (PB_put (length items) x) _).
-      apply derives_se.
-      apply (IH (Buf (S (length items))) (Buffered (items ++ (x :: nil))));
-        [ cbn [available]; rewrite length_put; apply Nat.eqb_refl
-        | exact Hrun ].
-    + (* Buf (length items) / Buffered items / Get, non-empty *)
-      refine (derives_sn productions (Buf (length items))
-                (Se Get :: Sn (Buf (Nat.pred (length items))) :: nil)
-                (Get :: tr) (PB_get (length items) Hb) _).
-      apply derives_se.
-      apply (IH (Buf (Nat.pred (length items))) (Buffered (pop items)));
-        [ cbn [available]; rewrite pop_length; apply Nat.eqb_refl
-        | exact Hrun ].
-    + (* Buf (length items) / Buffered items / Peek *)
-      refine (derives_sn productions (Buf (length items))
-                (Se Peek :: Sn (Buf (length items)) :: nil)
-                (Peek :: tr) (PB_peek (length items)) _).
-      apply derives_se.
-      apply (IH (Buf (length items)) (Buffered items));
-        [ cbn [available]; apply Nat.eqb_refl | exact Hrun ].
-    + (* Buf (length items) / Buffered items / Flush *)
-      refine (derives_sn productions (Buf (length items))
-                (Se Flush :: Sn (Buf 0) :: nil)
-                (Flush :: tr) (PB_flush (length items)) _).
-      apply derives_se.
-      apply (IH (Buf 0) (Buffered nil));
-        [ cbn [available]; apply Nat.eqb_refl | exact Hrun ].
-    + (* Buf (length items) / Buffered items / Close *)
-      refine (derives_sn productions (Buf (length items))
-                (Se Close :: Sn Cl :: nil)
-                (Close :: tr) (PB_close (length items)) _).
-      apply derives_se.
-      apply (IH Cl Closed); [ reflexivity | exact Hrun ].
-    + (* Cl / Closed / Peek *)
-      refine (derives_sn productions Cl
-                (Se Peek :: Sn Cl :: nil)
-                (Peek :: tr) PC_peek _).
-      apply derives_se.
-      apply (IH Cl Closed); [ reflexivity | exact Hrun ].
+  intros A s e Hinv Hne.
+  destruct A as [| n | ]; case_types; cbn [run_from step available] in *;
+    try (rewrite Nat.eqb_eq in Hinv; subst);
+    try discriminate Hinv;
+    repeat match goal with
+           | [ H : context[if ?b then _ else _] |- _ ] =>
+               destruct b eqn:Hb; cbn [run_from step] in *
+           | |- context[if ?b then _ else _] =>
+               destruct b eqn:Hb; cbn [run_from step] in *
+           end;
+    try (exfalso; apply Hne; reflexivity).
+  - (* Program / Uninitialized / Setup *)
+    exists (Buf 0). split;
+      [ exact PR_setup | cbn [available]; apply Nat.eqb_refl ].
+  - (* Buf (length items) / Buffered items / Put x *)
+    exists (Buf (S (length items))). split;
+      [ exact (PB_put (length items) x)
+      | cbn [available]; rewrite length_put; apply Nat.eqb_refl ].
+  - (* Buf (length items) / Buffered items / Get, non-empty *)
+    exists (Buf (Nat.pred (length items))). split;
+      [ exact (PB_get (length items) Hb)
+      | cbn [available]; rewrite pop_length; apply Nat.eqb_refl ].
+  - (* Buf (length items) / Buffered items / Peek *)
+    exists (Buf (length items)). split;
+      [ exact (PB_peek (length items))
+      | cbn [available]; apply Nat.eqb_refl ].
+  - (* Buf (length items) / Buffered items / Flush *)
+    exists (Buf 0). split;
+      [ exact (PB_flush (length items))
+      | cbn [available]; apply Nat.eqb_refl ].
+  - (* Buf (length items) / Buffered items / Close *)
+    exists Cl. split;
+      [ exact (PB_close (length items)) | reflexivity ].
+  - (* Cl / Closed / Peek *)
+    exists Cl. split; [ exact PC_peek | reflexivity ].
 Qed.
 
 Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
 Proof.
   intros tr H. unfold wellformed in H.
-  apply (gen_of_run Program Uninitialized); [ reflexivity | exact H ].
+  apply (gen_of_run run_from_error nil_prod step_prod Program Uninitialized); [ reflexivity | exact H ].
 Qed.
 
 (** * Assemble the model *)

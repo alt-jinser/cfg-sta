@@ -31,14 +31,15 @@ Measured across the five models (detail in `MODELS.md`):
 | obligations 1–3 (glue) | fully mechanical | 5/5 |
 | obligation 4 (`prod_ok`) | mechanical | 4/5; the fifth needs the net measure |
 | **grammar: `nt` / `prod` / `inv`** | **no -- design work** | count and queue had to be carried by the nonterminal |
-| obligation 7 (grammar completeness) | no | 5/5 hand-written; right-linear ⇒ per-event induction, non-right-linear ⇒ a word cut |
+| obligation 7 (grammar completeness) | partly | the library assembles the right-linear case from two witnesses (4 of 5); non-right-linear is hand-written (`rcu.v`) |
 | counterexample enumeration | mechanical | provided by the library (`examples_upto`) |
 
 **Conclusion:** every remaining difficulty sits in *grammar synthesis*;
-everything downstream of the grammar is obligation discharge and can be
-handed to automation.  If 1.1 is to generate protocol models
-automatically, the research question is how to synthesize the grammar
-(the nonterminals and their parameters), not how to discharge the
+everything downstream of the grammar is obligation discharge, and even
+the induction behind right-linear completeness now lives in the library
+(`gen_of_run`).  If 1.1 is to generate protocol models automatically,
+the research question is how to synthesize the grammar (the
+nonterminals and their parameters), not how to discharge the
 obligations.
 
 ## Open questions

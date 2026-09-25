@@ -18,8 +18,13 @@ every proof needs a decomposition lemma to recover it.
 
 **Completeness is a model obligation** (5–7), not a library proof: a
 state-indexed version is false, since `safe 1 [Drop]` holds while no
-production derives `[Drop]` (`rcu.v`). Soundness (3–4) is proved once
-in the library.
+production derives `[Drop]` (`rcu.v`). For right-linear grammars the
+library nevertheless owns the induction (`gen_of_run`): the model owes
+two witnesses -- an epsilon production per nonterminal, and a
+production per safe step -- because which production applies then
+depends only on (nonterminal, state, event); `rcu.v` cannot use it and
+proves completeness itself. Soundness (3–4) is proved once in the
+library.
 
 **A nonterminal's tail is checked at every state it can reach**, not
 at the current one -- the nonterminal consumes input before the tail

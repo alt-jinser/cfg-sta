@@ -119,72 +119,48 @@ Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
     consumes exactly one terminal, so the split of the word is forced
     and no decomposition lemma is needed (contrast rcu.v, whose
     [Read Body Drop Body] production does need one). *)
-Lemma gen_of_run : forall A s tr,
-    available A s = true -> run_from step s tr <> Error ->
-    derives productions (Sn A :: nil) tr.
+(** The two witnesses [gen_of_run] asks for.  The library owns the
+    induction and the assembly of the derivation; all that is left
+    here is choosing a production. *)
+Lemma nil_prod : forall A, productions A nil.
+Proof. intros A; destruct A; constructor. Qed.
+
+Lemma step_prod : forall A s e,
+    available A s = true -> step s e <> Error ->
+    exists B, productions A (Se e :: Sn B :: nil) /\
+              available B (step s e) = true.
 Proof.
-  intros A s tr. revert A s.
-  induction tr as [| e tr IH]; intros A s Hinv Hrun.
-  - destruct A.
-    + exact (derives_sn productions Program nil nil PR_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions U nil nil PU_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions H nil nil PH_nil
-               (derives_nil productions)).
-  - simpl in Hrun.
-    assert (Hne : step s e <> Error).
-    { intro Hf. rewrite Hf in Hrun. rewrite run_from_error in Hrun.
-      exact (Hrun eq_refl). }
-    destruct A; case_types; simpl in *;
-      try discriminate Hinv;
-      try (exfalso; apply Hrun; apply run_from_error).
-    + (* Program / Uninitialized / Create *)
-      refine (derives_sn productions Program (Se Create :: Sn U :: nil)
-                (Create :: tr) PR_body _).
-      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockCall *)
-      refine (derives_sn productions U (Se LockCall :: Sn U :: nil)
-                (LockCall :: tr) PU_call _).
-      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockAcquire *)
-      refine (derives_sn productions U (Se LockAcquire :: Sn H :: nil)
-                (LockAcquire :: tr) PU_acq _).
-      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / TryLockCall *)
-      refine (derives_sn productions U (Se TryLockCall :: Sn U :: nil)
-                (TryLockCall :: tr) PU_tryc _).
-      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / TryLockSuccess *)
-      refine (derives_sn productions U (Se TryLockSuccess :: Sn H :: nil)
-                (TryLockSuccess :: tr) PU_succ _).
-      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / TryLockFail *)
-      refine (derives_sn productions U (Se TryLockFail :: Sn U :: nil)
-                (TryLockFail :: tr) PU_tryf _).
-      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* H / Held / LockCall *)
-      refine (derives_sn productions H (Se LockCall :: Sn H :: nil)
-                (LockCall :: tr) PH_call _).
-      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
-    + (* H / Held / TryLockCall *)
-      refine (derives_sn productions H (Se TryLockCall :: Sn H :: nil)
-                (TryLockCall :: tr) PH_tryc _).
-      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
-    + (* H / Held / TryLockFail *)
-      refine (derives_sn productions H (Se TryLockFail :: Sn H :: nil)
-                (TryLockFail :: tr) PH_tryf _).
-      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
-    + (* H / Held / GuardDrop *)
-      refine (derives_sn productions H (Se GuardDrop :: Sn U :: nil)
-                (GuardDrop :: tr) PH_drop _).
-      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+  intros A s e Hinv Hne.
+  destruct A; case_types; simpl in *;
+    try discriminate Hinv;
+    try (exfalso; apply Hne; reflexivity).
+  - (* Program / Uninitialized / Create *)
+    exists U. split; [ exact PR_body | reflexivity ].
+  - (* U / Unlocked / LockCall *)
+    exists U. split; [ exact PU_call | reflexivity ].
+  - (* U / Unlocked / LockAcquire *)
+    exists H. split; [ exact PU_acq | reflexivity ].
+  - (* U / Unlocked / TryLockCall *)
+    exists U. split; [ exact PU_tryc | reflexivity ].
+  - (* U / Unlocked / TryLockSuccess *)
+    exists H. split; [ exact PU_succ | reflexivity ].
+  - (* U / Unlocked / TryLockFail *)
+    exists U. split; [ exact PU_tryf | reflexivity ].
+  - (* H / Held / LockCall *)
+    exists H. split; [ exact PH_call | reflexivity ].
+  - (* H / Held / TryLockCall *)
+    exists H. split; [ exact PH_tryc | reflexivity ].
+  - (* H / Held / TryLockFail *)
+    exists H. split; [ exact PH_tryf | reflexivity ].
+  - (* H / Held / GuardDrop *)
+    exists U. split; [ exact PH_drop | reflexivity ].
 Qed.
 
 Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
 Proof.
   intros tr H. unfold wellformed in H.
-  apply (gen_of_run Program Uninitialized); [ reflexivity | exact H ].
+  apply (gen_of_run run_from_error nil_prod step_prod Program Uninitialized);
+    [ reflexivity | exact H ].
 Qed.
 
 (** * Assemble the model. *)

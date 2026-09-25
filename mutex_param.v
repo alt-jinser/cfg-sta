@@ -151,100 +151,59 @@ Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
     from it.  Same shape as mutex_grammar's, plus two guard splits (the
     retry budget and the owner match) which the chain peels off before
     the cases are read -- ten cases survive, one per real transition. *)
-Lemma gen_of_run : forall A s tr,
-    available A s = true -> run_from step s tr <> Error ->
-    derives productions (Sn A :: nil) tr.
+(** The two witnesses [gen_of_run] asks for; the library owns the
+    induction. *)
+Lemma nil_prod : forall A, productions A nil.
+Proof. intros A; destruct A; constructor. Qed.
+
+Lemma step_prod : forall A s e,
+    available A s = true -> step s e <> Error ->
+    exists B, productions A (Se e :: Sn B :: nil) /\
+              available B (step s e) = true.
 Proof.
-  intros A s tr. revert A s.
-  induction tr as [| e tr IH]; intros A s Hinv Hrun.
-  - destruct A as [| | o].
-    + exact (derives_sn productions Program nil nil PR_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions U nil nil PU_nil
-               (derives_nil productions)).
-    + exact (derives_sn productions (H o) nil nil (PH_nil o)
-               (derives_nil productions)).
-  - simpl in Hrun.
-    assert (Hne : step s e <> Error).
-    { intro Hf. rewrite Hf in Hrun. rewrite run_from_error in Hrun.
-      exact (Hrun eq_refl). }
-    destruct A as [| | o]; case_types; simpl in *;
-      try (rewrite Nat.eqb_eq in Hinv; subst);
-      try discriminate Hinv;
-      (* The guards live in Hrun (the goal is a [derives] statement, it
-         has no [if]), so the split has to look at hypotheses too. *)
-      repeat match goal with
-             | [ H : context[if ?b then _ else _] |- _ ] =>
-                 destruct b eqn:Hb; simpl in *
-             | |- context[if ?b then _ else _] =>
-                 destruct b eqn:Hb; simpl in *
-             end;
-      try (exfalso; apply Hrun; apply run_from_error).
-    + (* Program / Uninitialized / Create *)
-      refine (derives_sn productions Program (Se Create :: Sn U :: nil)
-                (Create :: tr) PR_body _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockCall *)
-      refine (derives_sn productions U (Se (LockCall t) :: Sn U :: nil)
-                (LockCall t :: tr) (PU_call t) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / LockAcquire *)
-      refine (derives_sn productions U
-                (Se (LockAcquire t) :: Sn (H t) :: nil)
-                (LockAcquire t :: tr) (PU_acq t) _).
-      apply derives_se.
-      apply (IH (H t) (Held t)); [ simpl; apply Nat.eqb_refl | exact Hrun ].
-    + (* U / Unlocked / TryLockCall, within budget *)
-      refine (derives_sn productions U
-                (Se (TryLockCall t n) :: Sn U :: nil)
-                (TryLockCall t n :: tr) (PU_tryc t n Hb) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* U / Unlocked / TryLockSuccess *)
-      refine (derives_sn productions U
-                (Se (TryLockSuccess t) :: Sn (H t) :: nil)
-                (TryLockSuccess t :: tr) (PU_succ t) _).
-      apply derives_se.
-      apply (IH (H t) (Held t)); [ simpl; apply Nat.eqb_refl | exact Hrun ].
-    + (* U / Unlocked / TryLockFail *)
-      refine (derives_sn productions U (Se (TryLockFail t) :: Sn U :: nil)
-                (TryLockFail t :: tr) (PU_tryf t) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
-    + (* H owner / Held owner / LockCall *)
-      refine (derives_sn productions (H owner)
-                (Se (LockCall t) :: Sn (H owner) :: nil)
-                (LockCall t :: tr) (PH_call owner t) _).
-      apply derives_se.
-      apply (IH (H owner) (Held owner)); [ simpl; apply Nat.eqb_refl | exact Hrun ].
-    + (* H owner / Held owner / TryLockCall, within budget *)
-      refine (derives_sn productions (H owner)
-                (Se (TryLockCall t n) :: Sn (H owner) :: nil)
-                (TryLockCall t n :: tr) (PH_tryc owner t n Hb) _).
-      apply derives_se.
-      apply (IH (H owner) (Held owner)); [ simpl; apply Nat.eqb_refl | exact Hrun ].
-    + (* H owner / Held owner / TryLockFail *)
-      refine (derives_sn productions (H owner)
-                (Se (TryLockFail t) :: Sn (H owner) :: nil)
-                (TryLockFail t :: tr) (PH_tryf owner t) _).
-      apply derives_se.
-      apply (IH (H owner) (Held owner)); [ simpl; apply Nat.eqb_refl | exact Hrun ].
-    + (* H owner / Held owner / GuardDrop owner *)
-      pose proof (proj1 (Nat.eqb_eq t owner) Hb) as Hte.
-      rewrite Hte.
-      refine (derives_sn productions (H owner)
-                (Se (GuardDrop owner) :: Sn U :: nil)
-                (GuardDrop owner :: tr) (PH_drop owner) _).
-      apply derives_se.
-      apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+  intros A s e Hinv Hne.
+  destruct A as [| | o]; case_types; simpl in *;
+    try (rewrite Nat.eqb_eq in Hinv; subst);
+    try discriminate Hinv;
+    repeat match goal with
+           | [ H : context[if ?b then _ else _] |- _ ] =>
+               destruct b eqn:Hb; simpl in *
+           | |- context[if ?b then _ else _] =>
+               destruct b eqn:Hb; simpl in *
+           end;
+    try (exfalso; apply Hne; reflexivity).
+  - (* Program / Uninitialized / Create *)
+    exists U. split; [ exact PR_body | reflexivity ].
+  - (* U / Unlocked / LockCall *)
+    exists U. split; [ exact (PU_call t) | reflexivity ].
+  - (* U / Unlocked / LockAcquire *)
+    exists (H t). split;
+      [ exact (PU_acq t) | simpl; apply Nat.eqb_refl ].
+  - (* U / Unlocked / TryLockCall, within budget *)
+    exists U. split; [ exact (PU_tryc t n Hb) | reflexivity ].
+  - (* U / Unlocked / TryLockSuccess *)
+    exists (H t). split;
+      [ exact (PU_succ t) | simpl; apply Nat.eqb_refl ].
+  - (* U / Unlocked / TryLockFail *)
+    exists U. split; [ exact (PU_tryf t) | reflexivity ].
+  - (* H owner / Held owner / LockCall *)
+    exists (H owner). split;
+      [ exact (PH_call owner t) | simpl; apply Nat.eqb_refl ].
+  - (* H owner / Held owner / TryLockCall, within budget *)
+    exists (H owner). split;
+      [ exact (PH_tryc owner t n Hb) | simpl; apply Nat.eqb_refl ].
+  - (* H owner / Held owner / TryLockFail *)
+    exists (H owner). split;
+      [ exact (PH_tryf owner t) | simpl; apply Nat.eqb_refl ].
+  - (* H owner / Held owner / GuardDrop owner *)
+    pose proof (proj1 (Nat.eqb_eq t owner) Hb) as Hte. rewrite Hte.
+    exists U. split; [ exact (PH_drop owner) | reflexivity ].
 Qed.
 
 Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
 Proof.
   intros tr H. unfold wellformed in H.
-  apply (gen_of_run Program Uninitialized); [ reflexivity | exact H ].
+  apply (gen_of_run run_from_error nil_prod step_prod Program Uninitialized); [ reflexivity | exact H ].
 Qed.
 
 (** * Assemble the model. *)
