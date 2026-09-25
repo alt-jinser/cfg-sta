@@ -1,4 +1,4 @@
-# The contract and its seven models
+# The contract and its eight models
 
 `protocol_lib.v` proves one theorem, and every model reuses it:
 
@@ -44,6 +44,7 @@ statement of completeness is *false* in general (see the header of
 | `rcu.v` | 566 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
 | `rwlock.v` | 281 | `RwRead n`, `RwWrite` | 4 (+2 ε) | count-parameterized, right-linear; **no protocol spec exists**, so both sides come from the implementation (see `PIPELINE.md`, open question 1) |
 | `spin.v` | 212 | `NFree`, `NHeld` | 4 (+2 ε) | finite, right-linear; **no protocol spec** (implementation only) |
+| `rwmutex.v` | 350 | `NReaders n`, `NUpReader n`, `NWriter` | 14 (+3 ε) | count-parameterized ×2, right-linear mode conversions; **no protocol spec** (implementation only) |
 
 Two of these parameters are forced, not decorative:
 
@@ -70,9 +71,10 @@ completeness induction (`gen_of_run`); `hand` = proof written out.
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
 | `rwlock` | mech, 1-line, 1-line | mech + 1 availability cleanup | 1-line + 1-line | **witness**: 4 cases |
 | `spin` | mech, 1-line, 1-line | mech | 1-line + 1-line | **witness**: 2 cases |
+| `rwmutex` | mech, 1-line, 1-line | mech + count cleanup | 1-line + 1-line | **witness**: 10 cells, 11 leaves |
 
-Obligation 4 is mechanical for six of the seven models.  Obligation 7
-is assembled by the library for those six: the model hands it
+Obligation 4 is mechanical for seven of the eight models.  Obligation 7
+is assembled by the library for those seven: the model hands it
 `nil_prod` and `step_prod`, whose case count is the number of real
 transitions; only `rcu.v` (non-right-linear) proves completeness
 itself, because there the choice of production depends on where in the
@@ -107,7 +109,7 @@ make check    # build, then the gates below
 
 | gate | expected |
 |---|---|
-| all ten files above | compile clean, no warnings |
+| all eleven files above | compile clean, no warnings |
 | `grep "Theorem gen_iff_accepts" *.v` | exactly one hit, `protocol_lib.v` |
 | `grep "Admitted\|admit()\|assume()\|external_body" *.v` | no hits |
 | `git -C ../../vostd status --porcelain` | no tracked change (vostd is read-only for this work) |
