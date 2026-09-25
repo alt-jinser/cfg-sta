@@ -1,0 +1,9 @@
+# Rocq build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+.*.aux
+
+# direnv / nix
+.direnv/
