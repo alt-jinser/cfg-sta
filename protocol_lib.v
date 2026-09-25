@@ -190,6 +190,11 @@ Arguments derives {E Nt} _ _ _.
 Arguments derives_sn {E Nt} _ _ _ _ _ _.
 Arguments derives_nil {E Nt} _.
 Arguments derives_se {E Nt} _ _ _ _ _.
+(* The constructors too: models build derivations with them directly,
+   and the parameters are always inferable from the expected type. *)
+Arguments D_base {E Nt prod}.
+Arguments D_se {E Nt prod} _ _ _ _.
+Arguments D_sn {E Nt prod} _ _ _ _ _ _ _ _.
 Arguments gen {E Nt} _ _ _.
 Arguments Reach {St E Nt} _ _ _ _ _ _.
 Arguments ok {St E Nt} _ _ _ _ _ _.

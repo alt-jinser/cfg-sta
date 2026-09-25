@@ -23,7 +23,7 @@
        Read     -- enter a read-side critical section (take a token)
        Drop     -- leave it (return a token)
        Update   -- the writer publishes a new pointer; does not block
-                  and does not touch the reader count
+                   and does not touch the reader count
 
    Language: `Create` followed by any word in which `Drop` never
    underflows the reader count, with `Update` anywhere.  Intersected
@@ -40,39 +40,29 @@
 
        Program -> epsilon | Create Body
        Body    -> epsilon | Update Body
-                       | Read Body
-                       | Read Body Drop Body
+                        | Read Body
+                        | Read Body Drop Body
 
-   What is proved here (the spike: one file, no library):
+   THIS FILE IS A MODEL OF protocol_lib, not a proof development of its
+   own: derivability, [ok], soundness, and the headline theorem
+   `gen_iff_accepts` all come from the library.  What it owes the
+   contract is the transition matrix, the grammar side (nonterminals,
+   productions, availability), and the 7 obligations -- of which five
+   are one-liners here, [ob_prod_ok] needs the net measure, and
+   [ob_word_ok_gen] is the real content:
 
-       gen_iff_accepts : forall tr, gen tr <-> accepts tr = true
+   * [ob_word_ok_gen] is the <- direction, and it is model-specific by
+     necessity, not by choice: a state-indexed statement of
+     completeness is FALSE for this protocol ([safe 1 [Drop]] holds but
+     no production derives [Drop]), so which production applies, and
+     where its word ends, has to be decided from the word.  For this
+     grammar that means Dyck-prefix completeness ([body_complete]),
+     whose [Read] case needs the first position where the count bottoms
+     out ([dip_split]) -- because [Body -> Read Body Drop Body] is not
+     right-linear, and a right-linear grammar would not need it.
 
-   ...and the architecture it forced, which is what the reusable
-   contract will have to carry:
-
-     * Soundness (->) runs through [ok s alpha], whose nonterminal
-       clause checks its tail at EVERY state the nonterminal can
-       reach.  Checking the tail only at [s] would be wrong -- the
-       nonterminal consumes input first -- and tying that clause to
-       the derivation is why [Reach] is defined over [derives].  Its
-       obligations are [prod_ok] (one per production; five of the six
-       cases are [reflexivity], [PB_cs] needs the net measure) and
-       [ok_init].  [soundness] is stated with [fix] rather than
-       [induction]: an [induction] replaces the head nonterminal's
-       sub-derivation by an induction hypothesis, and [Reach] needs
-       that derivation.
-
-     * Completeness (<-) is routed through the word-level predicate
-       [good], never through a state-indexed induction: from a count
-       above zero the machine accepts an extra [Drop] that no
-       production can derive ([safe 1 [Drop]] holds, [derives] does
-       not), so "same state, same conclusion" is simply false.  Both
-       sides are therefore characterized against [safe 0] after the
-       opening [Create], and the only real work is [body_complete] --
-       Dyck-prefix completeness, whose [Read] case needs the first
-       position where the count bottoms out ([dip_split]).
-
-   Compiles with Rocq 9.1.1:  rocq compile rcu.v
+   Compiles with Rocq 9.1.1:
+     rocq compile protocol_lib.v && rocq compile rcu.v
 *)
 
 Require Import Corelib.Init.Nat.
@@ -82,6 +72,7 @@ Require Import Stdlib.Bool.Bool.
 Require Import Stdlib.Lists.List.
 Require Import Stdlib.ZArith.ZArith.
 Require Import Stdlib.micromega.Lia.
+Require Import protocol_lib.
 Open Scope bool_scope.
 
 (** * STA side *)
@@ -96,9 +87,6 @@ Inductive Event : Type :=
 | Read
 | Drop
 | Update.
-
-Definition is_live (s : State) : bool :=
-  match s with Reading _ => true | _ => false end.
 
 Definition is_err (s : State) : bool :=
   match s with Error => true | _ => false end.
@@ -118,17 +106,16 @@ Definition step (s : State) (e : Event) : State :=
 Lemma step_error_sink : forall e, step Error e = Error.
 Proof. intros e; reflexivity. Qed.
 
-(** * Recognizer *)
+(** * Recognizer: the library's, instantiated here.
 
-Fixpoint run_from (s : State) (tr : list Event) : State :=
-  match tr with
-  | nil => s
-  | e :: es => run_from (step s e) es
-  end.
-
-Definition run (tr : list Event) : State := run_from Uninit tr.
-
-Definition accepts (tr : list Event) : bool := negb (is_err (run tr)).
+    One definition is shared by the recognizer, the obligations and the
+    theorem -- writing a second one here would be exactly the
+    duplication the contract exists to prevent.  These notations bind
+    the table and the initial state, so the rest of the file reads as
+    if the recognizer were defined locally. *)
+Notation run_from := (protocol_lib.run_from step).
+Notation run := (protocol_lib.run Uninit step).
+Notation accepts := (protocol_lib.accepts Uninit step is_err).
 
 Lemma run_from_app : forall tr1 tr2 s,
     run_from s (tr1 ++ tr2) = run_from (run_from s tr1) tr2.
@@ -144,106 +131,34 @@ Proof.
   simpl. exact IH.
 Qed.
 
-(** * CFG side *)
+(** * CFG side: nonterminals and productions *)
 
 Inductive Nt : Type :=
 | Program
 | Body.
 
-Inductive sym : Type :=
-| Sn (n : Nt)
-| Se (e : Event).
-
 (** Productions.  Defined as a relation, not a table: the RHS is a
-    symbol list, and the proof obligations below are discharged by
-    constructor inversion rather than by boolean case analysis. *)
-Inductive prod : Nt -> list sym -> Prop :=
-| PR_nil  : prod Program nil
-| PR_body : prod Program (Se Create :: Sn Body :: nil)
-| PB_nil  : prod Body nil
-| PB_upd  : prod Body (Se Update :: Sn Body :: nil)
-| PB_read : prod Body (Se Read :: Sn Body :: nil)
-| PB_cs   : prod Body (Se Read :: Sn Body :: Se Drop :: Sn Body :: nil).
+    symbol list, and the obligation below is discharged by constructor
+    inversion rather than by boolean case analysis.
 
-(** Derivability, in YIELD form: a derivation records how the word
-    splits between a nonterminal and its continuation.
-
-    This is not cosmetic.  With a rewriting-style relation ("expand the
-    leftmost nonterminal, then another, ...") the split of the word
-    between a production and the rest of the form is never recorded, so
-    every proof needs a separate decomposition lemma to recover it --
-    and the state at which the continuation is run is exactly that
-    missing piece of information.  Recording the split in the rule
-    makes the state threading of the soundness proof direct.
-
-    (The rewriting view, if anyone wants it, is equivalent: leftmost
-    expansion can always be scheduled to match a yield derivation.) *)
-Inductive derives : list sym -> list Event -> Prop :=
-| D_base : derives nil nil
-| D_se   : forall e alpha tr,
-    derives alpha tr -> derives (Se e :: alpha) (e :: tr)
-| D_sn   : forall A beta tr1 tr2 alpha,
-    prod A beta -> derives beta tr1 -> derives alpha tr2 ->
-    derives (Sn A :: alpha) (tr1 ++ tr2).
-
-(** One nonterminal step, as a derived form of [D_sn]. *)
-Lemma derives_sn : forall A beta tr,
-    prod A beta -> derives beta tr -> derives (Sn A :: nil) tr.
-Proof.
-  intros A beta tr Hp Hd.
-  assert (H : derives (Sn A :: nil) (tr ++ nil))
-    by exact (D_sn A beta tr nil nil Hp Hd D_base).
-  rewrite app_nil_r in H. exact H.
-Qed.
-
-Definition gen (tr : list Event) : Prop := derives (Sn Program :: nil) tr.
-
-(** * The grammar really is unbounded-state.
-
-    Machine-checked witness for the non-regularity argument in the
-    header: every `Reading n` is reachable, so no finite automaton can
-    recognize this language (its Myhill-Nerode classes are unbounded). *)
-(** * ============================================================
-    The F1 contract, discovered here in miniature.
-
-    A context-free grammar knows nothing about states, yet its
-    soundness proof has to know that a terminal is safe where it sits.
-    The judgment below carries both -- and its middle clause is the
-    whole point of this file. *)
+    [PB_cs] is the non-right-linear one -- two nonterminals in its RHS,
+    straddling a terminal.  That single production is why the
+    completeness direction needs a word cut rather than a per-event
+    induction. *)
+Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
+| PR_nil  : productions Program nil
+| PR_body : productions Program (Se Create :: Sn Body :: nil)
+| PB_nil  : productions Body nil
+| PB_upd  : productions Body (Se Update :: Sn Body :: nil)
+| PB_read : productions Body (Se Read :: Sn Body :: nil)
+| PB_cs   : productions Body (Se Read :: Sn Body :: Se Drop :: Sn Body :: nil).
 
 (** Where a nonterminal may be expanded. *)
-Definition inv (A : Nt) (s : State) : bool :=
+Definition available (A : Nt) (s : State) : bool :=
   match A, s with
   | Program, Uninit  => true
   | Body,   Reading _ => true
   | _,      _        => false
-  end.
-
-(** States reachable by running some word derived from [A], WITHOUT
-    faulting on the way.
-
-    Restricting to non-faulting endpoints is deliberate, not a way of
-    hiding the conclusion: the soundness proof only ever applies this
-    clause after it has separately established that the endpoint does
-    not fault (from the obligation on the production), so nothing is
-    assumed that is not also proved -- while the top-level instance
-    stays trivially dischargeable instead of demanding a word-level
-    soundness lemma before the proof can even start. *)
-Definition Reach (s : State) (A : Nt) (s' : State) : Prop :=
-  exists tr, derives (Sn A :: nil) tr /\ run_from s tr = s' /\ s' <> Error.
-
-(** [ok s alpha]: [alpha] is safe to expand and run from [s].
-
-    The clause for a nonterminal checks its TAIL at every state the
-    nonterminal can reach, not at [s].  Checking the tail only at [s]
-    would be wrong: expanding a nonterminal makes it consume input
-    first, so the tail is really run from a later state -- and whether
-    it is still safe there is exactly what has to be guaranteed. *)
-Fixpoint ok (s : State) (alpha : list sym) {struct alpha} : Prop :=
-  match alpha with
-  | nil           => s <> Error
-  | Se e :: rest  => step s e <> Error /\ ok (step s e) rest
-  | Sn A :: rest  => inv A s = true /\ (forall s', Reach s A s' -> ok s' rest)
   end.
 
 (** * Net reader change.
@@ -282,7 +197,7 @@ Qed.
     by the bound [nt_net] of their own words. *)
 Definition nt_net (A : Nt) : Z := 0%Z.
 
-Fixpoint form_net (alpha : list sym) : Z :=
+Fixpoint form_net (alpha : list (sym Nt Event)) : Z :=
   match alpha with
   | nil             => 0%Z
   | Se Create :: t  => form_net t
@@ -294,14 +209,14 @@ Fixpoint form_net (alpha : list sym) : Z :=
 
 (** The per-production half of the bound -- dischargeable mechanically,
     one case per production constructor. *)
-Lemma prod_net : forall A beta, prod A beta -> (nt_net A <= form_net beta)%Z.
+Lemma prod_net : forall A beta, productions A beta -> (nt_net A <= form_net beta)%Z.
 Proof.
   (* [simpl] will not unfold [nt_net]: its body ignores the argument,
      so nothing is "reduced away" by its heuristic. *)
   intros A beta H; destruct H; unfold nt_net; simpl; lia.
 Qed.
 
-Lemma derives_net : forall alpha tr, derives alpha tr ->
+Lemma derives_net : forall alpha tr, derives productions alpha tr ->
     (net tr >= form_net alpha)%Z.
 Proof.
   intros alpha tr H;
@@ -346,7 +261,8 @@ Qed.
     This is what makes the [Drop] of the [PB_cs] production safe inside
     the per-production obligation below. *)
 Lemma reach_positive : forall n s',
-    Reach (Reading (S n)) Body s' -> exists k, s' = Reading (S k).
+    Reach Error step productions (Reading (S n)) Body s' ->
+    exists k, s' = Reading (S k).
 Proof.
   intros n s' [tr [Hd [Hr Hne]]].
   assert (Hsafe : run_from (Reading (S n)) tr <> Error)
@@ -366,9 +282,10 @@ Qed.
 (** * Word-level characterization of the safety property.
 
     The recognizer is safe from [n] readers exactly when the word never
-    underflows and never mentions [Create].  Both directions of the
-    final equivalence are routed through this: the STA side proves it
-    directly, the CFG side proves it against the same predicate. *)
+    underflows and never mentions [Create].  Both obligations that talk
+    about words are routed through this: the recognizer side proves the
+    equivalence directly, the grammar side proves generation from the
+    same predicate. *)
 Fixpoint safe (n : nat) (tr : list Event) : bool :=
   match tr with
   | nil          => true
@@ -377,22 +294,6 @@ Fixpoint safe (n : nat) (tr : list Event) : bool :=
   | Update :: tr' => safe n tr'
   | Create :: tr' => false
   end.
-
-Lemma is_err_eq : forall s, is_err s = true <-> s = Error.
-Proof.
-  intros s; destruct s; simpl; split; intros H;
-    try reflexivity; try discriminate.
-Qed.
-
-Lemma accepts_iff : forall tr, accepts tr = true <-> run tr <> Error.
-Proof.
-  intros tr. unfold accepts.
-  destruct (is_err (run tr)) eqn: He; simpl.
-  - split; [ discriminate | intro H; exfalso; apply H;
-      exact (proj1 (is_err_eq (run tr)) He) ].
-  - split; [ intro H; intro Hf; rewrite Hf in He; simpl in He;
-      discriminate | intros _; reflexivity ].
-Qed.
 
 Lemma run_reading_safe : forall tr n,
     run_from (Reading n) tr <> Error <-> safe n tr = true.
@@ -416,27 +317,42 @@ Proof.
   - exists (Create :: nil). reflexivity.
   - destruct IH as [tr Htr].
     exists (tr ++ (Read :: nil)).
-    unfold run in *.
+    (* [run] is the library's, applied: expose the recursion to rewrite. *)
+    change (run_from Uninit (tr ++ (Read :: nil)) = Reading (S n)).
     rewrite run_from_app.
-    rewrite Htr. simpl. reflexivity.
+    assert (Htr' : run_from Uninit tr = Reading n) by exact Htr.
+    rewrite Htr'. simpl. reflexivity.
 Qed.
 
 (** * ============================================================
-    Direction 1: generated traces do not fault. *)
+    The 7 obligations *)
 
-(** The per-production obligation, in the shape the contract will
-    generalize: an available nonterminal's production is safe where it
-    sits.
+Lemma ob_is_error_ok : forall s, is_err s = true <-> s = Error.
+Proof.
+  intros s; destruct s; simpl; split; intros H;
+    try reflexivity; try discriminate.
+Qed.
+
+Lemma ob_init_fault_free : Uninit <> Error.
+Proof. discriminate. Qed.
+
+Lemma ob_inv_start : available Program Uninit = true.
+Proof. reflexivity. Qed.
+
+(** The per-production obligation: an available nonterminal's
+    production is safe where it sits.
 
     The two [epsilon] productions discharge themselves along the way --
     [try discriminate] head-reduces [ok s nil] to [s <> Error].  What
     remains are the four productions that start with a terminal; four
     of their six sub-goals are [reflexivity], and [PB_cs] is the only
     one that needs [reach_positive]. *)
-Lemma prod_ok : forall A beta s, prod A beta -> inv A s = true -> ok s beta.
+Lemma ob_prod_ok : forall A beta s,
+    productions A beta -> available A s = true ->
+    ok Error step available productions s beta.
 Proof.
   intros A beta s Hp Hinv.
-  destruct Hp; unfold inv in Hinv; destruct s; try discriminate;
+  destruct Hp; unfold available in Hinv; destruct s; try discriminate;
     simpl in *; try discriminate.
   - split; [ intro H; discriminate | ].    (* PR_body, Uninit *)
     split; [ reflexivity | ].
@@ -456,55 +372,13 @@ Proof.
     intros s2 [tr [Hd [Hr Hne]]]. exact Hne.
 Qed.
 
-Lemma ok_init : ok Uninit (Sn Program :: nil).
-Proof.
-  split; [ reflexivity | ].
-  intros s' [tr [Hd [Hr Hne]]]. exact Hne.
-Qed.
-
-(** The soundness theorem, in the shape the contract will generalize.
-
-    [fix] rather than [induction]: after an [induction] on the
-    derivation the sub-derivation of the head nonterminal has been
-    replaced by its induction hypothesis, and [Reach] needs exactly
-    that sub-derivation to place the continuation's state. *)
-Lemma soundness : forall alpha tr, derives alpha tr ->
-    forall s, ok s alpha -> run_from s tr <> Error.
-Proof.
-  fix soundness 3.
-  intros alpha tr H.
-  destruct H as [ | e alpha' tr' Hder
-                | A beta tr1 tr2 alpha' Hp Hder1 Hder2 ];
-    intros s Hok.
-  - simpl in *. exact Hok.
-  - simpl in *. destruct Hok as [Hs Hok'].
-    exact (soundness alpha' tr' Hder (step s e) Hok').
-  - rewrite run_from_app. destruct Hok as [Hinv Hok'].
-    pose proof (prod_ok A beta s Hp Hinv) as Hokb.
-    assert (Hne1 : run_from s tr1 <> Error)
-      by exact (soundness beta tr1 Hder1 s Hokb).
-    assert (Hs1 : Reach s A (run_from s tr1)).
-    { exists tr1. split.
-      - exact (derives_sn A beta tr1 Hp Hder1).
-      - split; [ reflexivity | exact Hne1 ]. }
-    exact (soundness alpha' tr2 Hder2 (run_from s tr1) (Hok' _ Hs1)).
-Qed.
-
-Lemma gen_run : forall tr, gen tr -> run tr <> Error.
-Proof.
-  intros tr Hg. unfold run.
-  exact (soundness (Sn Program :: nil) tr Hg Uninit ok_init).
-Qed.
-
-Lemma gen_accepts : forall tr, gen tr -> accepts tr = true.
-Proof.
-  intros tr Hg. apply accepts_iff. apply gen_run. exact Hg.
-Qed.
+(** The word-level predicate of obligation 5 is defined further down,
+    with [good] -- see [wellformed] there. *)
 
 (** * ============================================================
-    Direction 2: every safe trace is generated. *)
+    Direction 2: every safe trace is generated.
 
-(** Where the running count first reaches its floor.
+    Where the running count first reaches its floor.
 
     Generalized over the floor [n] because the recursive cases move it:
     a leading [Read] raises it by one before the cut is found.  The
@@ -547,7 +421,7 @@ Qed.
     usual form whenever it is wanted. *)
 Lemma body_complete : forall len tr, length tr <= len ->
     safe 0 tr = true ->
-    exists beta, prod Body beta /\ derives beta tr.
+    exists beta, productions Body beta /\ derives productions beta tr.
 Proof.
   induction len as [| len IH]; intros tr Hlen Hsafe.
   - destruct tr as [| e tr]; [ exists nil; split; [ constructor | constructor ] | ].
@@ -561,7 +435,8 @@ Proof.
         -- (* prefix is itself balanced: Read + inner *)
            destruct (IH tr ltac:(lia) H0) as [beta0 [Hp0 Hd0]].
            exists (Se Read :: Sn Body :: nil). split; [ constructor | ].
-           apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+           apply D_se.
+           apply (derives_sn productions Body beta0 tr Hp0 Hd0).
         -- (* the count bottoms out inside [tr]: read-body-drop *)
            destruct (dip_split tr 0 Hsafe H0)
              as [w1 [w2 [Heq [Hw1 Hw2]]]].
@@ -575,16 +450,17 @@ Proof.
            exact (D_sn Body beta1 w1 (Drop :: w2)
                     (Se Drop :: Sn Body :: nil) Hp1 Hd1
                     (D_se Drop (Sn Body :: nil) w2
-                      (derives_sn Body beta2 w2 Hp2 Hd2))).
+                      (derives_sn productions Body beta2 w2 Hp2 Hd2))).
       * discriminate.                       (* Drop at 0 *)
       * (* Update *)
         destruct (IH tr ltac:(lia) Hsafe) as [beta0 [Hp0 Hd0]].
         exists (Se Update :: Sn Body :: nil). split; [ constructor | ].
-        apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+        apply D_se.
+        apply (derives_sn productions Body beta0 tr Hp0 Hd0).
 Qed.
 
 Lemma body_complete0 : forall tr, safe 0 tr = true ->
-    exists beta, prod Body beta /\ derives beta tr.
+    exists beta, productions Body beta /\ derives productions beta tr.
 Proof.
   intros tr H. apply (body_complete (length tr)); [ apply le_n | exact H ].
 Qed.
@@ -612,29 +488,79 @@ Proof.
              | intro H; discriminate H ].
 Qed.
 
-Lemma accepts_good : forall tr, accepts tr = true <-> good tr = true.
-Proof.
-  intros tr. rewrite accepts_iff. exact (run_good tr).
-Qed.
+(** The word-level predicate of obligation 5: a trace the recognizer
+    accepts. *)
+Definition wellformed (tr : list Event) : Prop := good tr = true.
 
-Lemma good_gen : forall tr, good tr = true -> gen tr.
+Lemma ob_word_ok_run : forall tr, run tr <> Error <-> wellformed tr.
+Proof. intros tr. unfold wellformed. apply run_good. Qed.
+
+Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
 Proof.
   induction tr as [| e tr IH]; simpl; intro H.
-  - exact (derives_sn Program nil nil PR_nil D_base).
+  - exact (derives_sn productions Program nil nil PR_nil D_base).
   - destruct e.
     + destruct (body_complete0 tr H) as [beta0 [Hp0 Hd0]].
-      apply (derives_sn Program (Se Create :: Sn Body :: nil) (Create :: tr)
-               PR_body).
-      apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+      apply (derives_sn productions Program (Se Create :: Sn Body :: nil)
+               (Create :: tr) PR_body).
+      apply D_se. apply (derives_sn productions Body beta0 tr Hp0 Hd0).
     + discriminate.
     + discriminate.
     + discriminate.
 Qed.
 
-(** * The headline theorem, for this model. *)
-Theorem gen_iff_accepts : forall tr, gen tr <-> accepts tr = true.
+(** * Assemble the model *)
+Definition P : Protocol :=
+  {| st := State; ev := Event; nt := Nt;
+     init := Uninit; fault := Error; next := step;
+     is_error := is_err;
+     start := Program; prod := productions; inv := available;
+
+     is_error_ok := ob_is_error_ok;
+     init_fault_free := ob_init_fault_free;
+     inv_start := ob_inv_start;
+     prod_ok := ob_prod_ok;
+     word_ok := wellformed;
+     word_ok_run := ob_word_ok_run;
+     word_ok_gen := ob_word_ok_gen;
+  |}.
+
+(** [run] and [accepts] above are notations bound to THIS model's
+    table, so the library's own (parameterized) ones have to be named
+    qualifiedly here. *)
+Notation runp := (protocol_lib.run (init P) (next P)).
+Notation acceptsp := (protocol_lib.accepts (init P) (next P) (is_error P)).
+Notation genp := (gen (prod P) (start P)).
+
+(** * Everything below is library-provided; these are just checks. *)
+
+(* The recognition criterion is prefix-closed: a trace may end while a
+   read is still outstanding.  The grammar accepts it too. *)
+Example prefix_read : acceptsp (Create :: Read :: nil) = true.
+Proof. reflexivity. Qed.
+
+Example balanced_ok : acceptsp (Create :: Read :: Drop :: nil) = true.
+Proof. reflexivity. Qed.
+
+(* Dropping a token nobody took is exactly the misuse this models. *)
+Example drop_without_read_bad : acceptsp (Create :: Drop :: nil) = false.
+Proof. reflexivity. Qed.
+
+Example read_drop_generated : genp (Create :: Read :: Drop :: nil).
+Proof. apply (gen_iff_accepts P). reflexivity. Qed.
+
+Example drop_without_read_not_generated : ~ genp (Create :: Drop :: nil).
 Proof.
-  intros tr. split.
-  - intro H. apply gen_accepts. exact H.
-  - intro H. apply accepts_good in H. apply good_gen. exact H.
+  intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
+Qed.
+
+(** The grammar really is unbounded-state: every [Reading n] is
+    reachable AND accepted, so no finite automaton can recognize this
+    language (its Myhill-Nerode classes are unbounded). *)
+Example reading_unbounded_accepting :
+    forall n, exists tr, run tr = Reading n /\ good tr = true.
+Proof.
+  intro n. destruct (reading_unbounded n) as [tr Htr].
+  exists tr. split; [ exact Htr | apply run_good; rewrite Htr;
+                      discriminate ].
 Qed.
