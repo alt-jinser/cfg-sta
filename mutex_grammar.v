@@ -2,38 +2,39 @@
 
    This file now supplies ONLY what a model owes the library:
 
-     - four event classes, defined without using `next`  (the grammar side)
-     - the 11 obligations of protocol_lib.Protocol
+     - nonterminals, productions and the availability invariant
+       (the grammar side, defined without [next])
+     - the 7 obligations of protocol_lib.Protocol
 
-   States, events and the transition matrix are NOT duplicated here: they
-   come from mutex.v, together with its regression tests.  See
+   States, events and the transition matrix are NOT duplicated here:
+   they come from mutex.v, together with its regression tests.  See
    `mutex_accepts_agree` below, which transfers those tests to the
    recognizer this file's theorem talks about.
 
-   Everything else -- the grammar `genf`, the top level `gen`, the
-   recognizer glue `run`/`accepts`, and THE headline theorem
+   Everything else -- the derivability relation, the recognizer glue
+   `run`/`accepts`, soundness, and THE headline theorem
 
        gen_iff_accepts : forall tr, gen tr <-> accepts tr = true
 
-   ...comes from protocol_lib and is shared with mutex_param.v and
-   mutex_waitqueue.v.
+   ...comes from protocol_lib and is shared with mutex_param.v,
+   mutex_waitqueue.v and buffer.v.
 
    Grammar (U = Unlocked, H = Held, nonterminals read as "starting in"):
 
-       U -> epsilon
-          | s U     for s in {lock-call, try-lock-call, try-lock-fail}
-          | a H     for a in {lock-acquire, try-lock-success}
+       Program -> epsilon | Create U
+       U -> epsilon | lock-call U | try-lock-call U | try-lock-fail U
+                  | lock-acquire H | try-lock-success H
+       H -> epsilon | lock-call H | try-lock-call H | try-lock-fail H
+                  | guard-drop U
 
-       H -> epsilon
-          | s H     for s in {lock-call, try-lock-call, try-lock-fail}
-          | d U     for d = guard-drop
+   U/H say nothing about the *final* state.  That is deliberate: it
+   mirrors `accepts`, which accepts a trace that ends while the lock is
+   still held (see `prefix_held`).  If the protocol were meant to be
+   balanced instead, `balanced_is_not_equivalent` below is the
+   machine-checked counterexample.
 
-       Program -> epsilon | create body      (body in U)
-
-   U/H say nothing about the *final* state.  That is deliberate: it mirrors
-   `accepts`, which accepts a trace that ends while the lock is still held
-   (see `prefix_held`).  If the protocol were meant to be balanced instead,
-   `balanced_is_not_equivalent` below is the machine-checked counterexample.
+   Names: the model's definitions must not collide with a Protocol
+   field, hence [productions] / [available] rather than [prod] / [inv].
 
    Compiles with Rocq 9.1.1:
      rocq compile protocol_lib.v && rocq compile mutex_grammar.v
@@ -42,126 +43,178 @@
 Require Import Corelib.Init.Nat.
 Require Import Corelib.Lists.ListDef.
 (* mutex.v owns the transition table.  Import it BEFORE protocol_lib so
-   that the library's `run` / `accepts` / `next` win the unqualified
-   names; reach mutex's own definitions through the `mutex.` qualifier. *)
+   that the library's `run` / `accepts` win the unqualified names;
+   reach mutex's own definitions through the `mutex.` qualifier. *)
 Require Import mutex.
 Require Import Stdlib.Lists.List.
 Require Import protocol_lib.
 
-(** * Model: states, events and the transition matrix all come from
-    mutex.v, together with its 7 regression tests (t_create, t_lock_unlock,
-    t_accept_ok, ...).  Only the grammar-side event classes are defined
-    here, independently of [next]. *)
-Definition is_live (s : State) : bool :=
-  match s with Unlocked | Held => true | _ => false end.
+(** * Grammar side *)
+Inductive Nt := Program | U | H.
 
-(** The STA side is [mutex.next] itself: one copy of the 4x7 table, not
-    two.  [step] is only an alias, so the obligations below read exactly
-    the same way as in the other two models. *)
+(** The STA side is [mutex.next] itself: one copy of the 4x7 table. *)
 Definition step : State -> Event -> State := mutex.next.
 
-(** * Grammar side: the four event classes, defined without [step]. *)
-Definition is_stutter (e : Event) : bool :=
-  match e with
-  | LockCall | TryLockCall | TryLockFail => true
-  | _ => false
+Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
+| PR_nil  : productions Program nil
+| PR_body : productions Program (Se Create :: Sn U :: nil)
+| PU_nil  : productions U nil
+| PU_call : productions U (Se LockCall :: Sn U :: nil)
+| PU_tryc : productions U (Se TryLockCall :: Sn U :: nil)
+| PU_tryf : productions U (Se TryLockFail :: Sn U :: nil)
+| PU_acq  : productions U (Se LockAcquire :: Sn H :: nil)
+| PU_succ : productions U (Se TryLockSuccess :: Sn H :: nil)
+| PH_nil  : productions H nil
+| PH_call : productions H (Se LockCall :: Sn H :: nil)
+| PH_tryc : productions H (Se TryLockCall :: Sn H :: nil)
+| PH_tryf : productions H (Se TryLockFail :: Sn H :: nil)
+| PH_drop : productions H (Se GuardDrop :: Sn U :: nil).
+
+(** Which nonterminal is available in which state: the invariant that
+    ties the state machine to the grammar. *)
+Definition available (A : Nt) (s : State) : bool :=
+  match A, s with
+  | Program, Uninitialized => true
+  | U, Unlocked            => true
+  | H, Held                => true
+  | _, _                   => false
   end.
 
-Definition changes (e : Event) (s s' : State) : bool :=
-  match e, s, s' with
-  (* the state-advancing steps *)
-  | LockAcquire, Unlocked, Held => true
-  | TryLockSuccess, Unlocked, Held => true
-  (* the state-releasing steps *)
-  | GuardDrop, Held, Unlocked => true
-  | _, _, _ => false
-  end.
+(** * The 7 obligations *)
 
-Definition starts (e : Event) (s : State) : bool :=
-  match e, s with
-  | Create, Unlocked => true
-  | _, _ => false
-  end.
-
-(** * The 11 obligations
-
-    Nine of the eleven are table-shaped and are discharged mechanically
-    by `discharge case_types`.  Two -- `ob_start_complete` (whose goal
-    ends in an existential) and `ob_step_complete` (the totality case
-    split over the transition table) -- are proved by hand, because each
-    has to pick WHICH rule applies for each cell. *)
 Ltac case_types := case_of State; case_of Event.
-
-Lemma ob_live_not_fault : forall s, is_live s = true -> s <> Error.
-Proof. discharge case_types. Qed.
 
 Lemma ob_is_error_ok : forall s, mutex.is_error s = true <-> s = Error.
 Proof. discharge case_types. Qed.
 
-Lemma ob_init_ok : Uninitialized <> Error.
+Lemma ob_init_fault_free : Uninitialized <> Error.
 Proof. discharge case_types. Qed.
 
-Lemma ob_start_ok : forall e s, starts e s = true -> step Uninitialized e = s.
-Proof. discharge case_types. Qed.
+Lemma ob_inv_start : available Program Uninitialized = true.
+Proof. reflexivity. Qed.
 
-Lemma ob_start_live : forall e s, starts e s = true -> is_live s = true.
-Proof. discharge case_types. Qed.
+Lemma ob_prod_ok : forall A beta s,
+    productions A beta -> available A s = true -> ok Error step available productions s beta.
+Proof. discharge_prod productions case_types. Qed.
 
-Lemma ob_start_complete : forall e, step Uninitialized e <> Error ->
-  exists s, starts e s = true.
+(** [Error] really is a sink -- used by the completeness proof below,
+    which argues by contradiction from a faulting run. *)
+Lemma step_error_sink : forall e, step Error e = Error.
+Proof. intros e; reflexivity. Qed.
+
+Lemma run_from_error : forall tr, run_from step Error tr = Error.
 Proof.
-  (* Hand-written: the goal ends in an existential, and after case
-     analysis it simplifies to a bare `false = true`, which Rocq 9's
-     `discriminate` does not close. *)
-  intros e H. destruct e; simpl in H;
-    [ exists Unlocked; reflexivity | contradiction .. ].
+  induction tr as [| e tr IH]; [ reflexivity | ].
+  (* [change] first: [simpl] may or may not have reduced [step Error e]
+     yet, and rewriting needs the subterm to still be there. *)
+  change (run_from step (step Error e) tr = Error).
+  rewrite step_error_sink. exact IH.
 Qed.
 
-Lemma ob_stutter_ok : forall s e,
-  is_live s = true -> is_stutter e = true -> step s e = s.
-Proof. discharge case_types. Qed.
+(** The word-level predicate: a trace the machine accepts.  For a finite
+    state machine with no counter there is no sharper structural form to
+    give it -- and the content sits in [ob_word_ok_gen] anyway, which is
+    where the contract says it belongs. *)
+Definition wellformed (tr : list Event) : Prop :=
+  run Uninitialized step tr <> Error.
 
-Lemma ob_step_ok : forall s s' e, changes e s s' = true -> step s e = s'.
-Proof. discharge case_types. Qed.
+Lemma ob_word_ok_run : forall tr,
+    run Uninitialized step tr <> Error <-> wellformed tr.
+Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
-Lemma ob_step_live : forall s s' e, changes e s s' = true -> is_live s' = true.
-Proof. discharge case_types. Qed.
-
-Lemma ob_fault_absorbing : forall e, step Error e = Error.
-Proof. discharge case_types. Qed.
-
-(** Totality of the transition table: every step out of a live state is
-    either a stutter, a state change, or a fault.  This is the
-    backward-direction bridge. *)
-Lemma ob_step_complete : forall s e, is_live s = true ->
-    (is_stutter e = true /\ step s e = s)
-    \/ (exists s', changes e s s' = true)
-    \/ (step s e = Error).
+(** Direction 2, at the grammar's own level: a safe run from a state
+    where [A] is available is derivable from [A].  Right-linear
+    productions make this a per-event induction -- each production
+    consumes exactly one terminal, so the split of the word is forced
+    and no decomposition lemma is needed (contrast rcu.v, whose
+    [Read Body Drop Body] production does need one). *)
+Lemma gen_of_run : forall A s tr,
+    available A s = true -> run_from step s tr <> Error ->
+    derives productions (Sn A :: nil) tr.
 Proof.
-  intros s e Hl. destruct s; simpl in Hl; try discriminate.
-  all: destruct e; simpl;
-    try solve [ left; split; reflexivity ];
-    try solve [ right; left; exists Held; reflexivity ];
-    try solve [ right; left; exists Unlocked; reflexivity ];
-    try solve [ right; right; reflexivity ].
+  intros A s tr. revert A s.
+  induction tr as [| e tr IH]; intros A s Hinv Hrun.
+  - destruct A.
+    + exact (derives_sn productions Program nil nil PR_nil
+               (derives_nil productions)).
+    + exact (derives_sn productions U nil nil PU_nil
+               (derives_nil productions)).
+    + exact (derives_sn productions H nil nil PH_nil
+               (derives_nil productions)).
+  - simpl in Hrun.
+    assert (Hne : step s e <> Error).
+    { intro Hf. rewrite Hf in Hrun. rewrite run_from_error in Hrun.
+      exact (Hrun eq_refl). }
+    destruct A; case_types; simpl in *;
+      try discriminate Hinv;
+      try (exfalso; apply Hrun; apply run_from_error).
+    + (* Program / Uninitialized / Create *)
+      refine (derives_sn productions Program (Se Create :: Sn U :: nil)
+                (Create :: tr) PR_body _).
+      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+    + (* U / Unlocked / LockCall *)
+      refine (derives_sn productions U (Se LockCall :: Sn U :: nil)
+                (LockCall :: tr) PU_call _).
+      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+    + (* U / Unlocked / LockAcquire *)
+      refine (derives_sn productions U (Se LockAcquire :: Sn H :: nil)
+                (LockAcquire :: tr) PU_acq _).
+      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
+    + (* U / Unlocked / TryLockCall *)
+      refine (derives_sn productions U (Se TryLockCall :: Sn U :: nil)
+                (TryLockCall :: tr) PU_tryc _).
+      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+    + (* U / Unlocked / TryLockSuccess *)
+      refine (derives_sn productions U (Se TryLockSuccess :: Sn H :: nil)
+                (TryLockSuccess :: tr) PU_succ _).
+      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
+    + (* U / Unlocked / TryLockFail *)
+      refine (derives_sn productions U (Se TryLockFail :: Sn U :: nil)
+                (TryLockFail :: tr) PU_tryf _).
+      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
+    + (* H / Held / LockCall *)
+      refine (derives_sn productions H (Se LockCall :: Sn H :: nil)
+                (LockCall :: tr) PH_call _).
+      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
+    + (* H / Held / TryLockCall *)
+      refine (derives_sn productions H (Se TryLockCall :: Sn H :: nil)
+                (TryLockCall :: tr) PH_tryc _).
+      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
+    + (* H / Held / TryLockFail *)
+      refine (derives_sn productions H (Se TryLockFail :: Sn H :: nil)
+                (TryLockFail :: tr) PH_tryf _).
+      apply derives_se. apply (IH H Held); [ reflexivity | exact Hrun ].
+    + (* H / Held / GuardDrop *)
+      refine (derives_sn productions H (Se GuardDrop :: Sn U :: nil)
+                (GuardDrop :: tr) PH_drop _).
+      apply derives_se. apply (IH U Unlocked); [ reflexivity | exact Hrun ].
 Qed.
 
-(** * Assemble the model.  Note: every definition above uses a name that
-    does not clash with a Protocol field, otherwise the record literal
-    below would fail with "Not a projection". *)
+Lemma ob_word_ok_gen : forall tr, wellformed tr -> gen productions Program tr.
+Proof.
+  intros tr H. unfold wellformed in H.
+  apply (gen_of_run Program Uninitialized); [ reflexivity | exact H ].
+Qed.
+
+(** * Assemble the model. *)
 Definition P : Protocol :=
-  {| st := State; ev := Event; live := is_live; init := Uninitialized;
-     fault := Error; next := step; is_error := mutex.is_error;
-     stutter := is_stutter; changes_to := changes;
-     starts_to := starts;
+  {| st := State; ev := Event; nt := Nt;
+     init := Uninitialized; fault := Error; next := step;
+     is_error := mutex.is_error;
+     start := Program; prod := productions; inv := available;
 
-     live_not_fault := ob_live_not_fault; is_error_ok := ob_is_error_ok;
-     init_ok := ob_init_ok; start_ok := ob_start_ok;
-     start_live := ob_start_live; start_complete := ob_start_complete;
-     stutter_ok := ob_stutter_ok; changes_ok := ob_step_ok;
-     changes_live := ob_step_live; fault_absorbing := ob_fault_absorbing;
-     step_complete := ob_step_complete;
+     is_error_ok := ob_is_error_ok;
+     init_fault_free := ob_init_fault_free;
+     inv_start := ob_inv_start;
+     prod_ok := ob_prod_ok;
+     word_ok := wellformed;
+     word_ok_run := ob_word_ok_run;
+     word_ok_gen := ob_word_ok_gen;
   |}.
+
+Notation runp := (run (init P) (next P)).
+Notation acceptsp := (accepts (init P) (next P) (is_error P)).
+Notation genp := (gen (prod P) (start P)).
 
 (** * Agreement with mutex.v.
 
@@ -170,15 +223,16 @@ Definition P : Protocol :=
     two lemmas make mutex.v's regression tests (t_create, t_lock_unlock,
     t_accept_ok, ...) apply to the recognizer `gen_iff_accepts` talks
     about -- one table, one meaning. *)
-Lemma run_from_agree : forall tr s, run_from P s tr = mutex.run_from s tr.
+Lemma run_from_agree : forall tr s, run_from (next P) s tr = mutex.run_from s tr.
 Proof.
   intros tr; induction tr as [| e tr IH]; intros s; [ reflexivity | ].
   cbn [run_from]. cbn [mutex.run_from]. exact (IH (next P s e)).
 Qed.
 
-Lemma mutex_accepts_agree : forall tr, accepts P tr = mutex.accepts tr.
+Lemma mutex_accepts_agree : forall tr, acceptsp tr = mutex.accepts tr.
 Proof.
-  intros tr. unfold accepts, mutex.accepts. unfold run, mutex.run.
+  intros tr. unfold accepts. unfold mutex.accepts.
+  unfold run, mutex.run.
   rewrite run_from_agree. reflexivity.
 Qed.
 
@@ -186,24 +240,29 @@ Qed.
 
 (* The acceptance criterion is prefix-closed: a trace may end while the
    lock is held.  The grammar accepts it too. *)
-Example prefix_held : accepts P (Create :: LockAcquire :: nil) = true.
+Example prefix_held : acceptsp (Create :: LockAcquire :: nil) = true.
 Proof. reflexivity. Qed.
 
-Example balanced_ok : accepts P (Create :: LockAcquire :: GuardDrop :: nil) = true.
+Example balanced_ok : acceptsp (Create :: LockAcquire :: GuardDrop :: nil) = true.
 Proof. reflexivity. Qed.
 
-Example drop_without_lock_bad : accepts P (Create :: GuardDrop :: nil) = false.
+Example drop_without_lock_bad : acceptsp (Create :: GuardDrop :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* Constructing a trace from the grammar constructors directly. *)
-Example prefix_held_generated : gen P (Create :: LockAcquire :: nil).
+(* Constructing a trace from the productions directly. *)
+Example prefix_held_generated : genp (Create :: LockAcquire :: nil).
 Proof.
-  apply (G_start P) with (s := Unlocked); [ reflexivity | ].
-  apply (GF_chg P Unlocked Held LockAcquire nil);
-    [ reflexivity | apply GF_nil; reflexivity ].
+  apply (derives_sn productions Program (Se Create :: Sn U :: nil)
+           (Create :: LockAcquire :: nil) PR_body).
+  apply derives_se.
+  apply (derives_sn productions U (Se LockAcquire :: Sn H :: nil)
+           (LockAcquire :: nil) PU_acq).
+  apply derives_se.
+  apply (derives_sn productions H nil nil PH_nil).
+  apply derives_nil.
 Qed.
 
-Example drop_without_lock_not_generated : ~ gen P (Create :: GuardDrop :: nil).
+Example drop_without_lock_not_generated : ~ genp (Create :: GuardDrop :: nil).
 Proof.
   intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
 Qed.
@@ -223,7 +282,7 @@ Proof. reflexivity. Qed.
 
 (** EVERY enumerated example is accepted -- not just the first one. *)
 Example enumerated_examples_are_accepted :
-  forall tr, In tr (examples_upto P alphabet 2) -> accepts P tr = true.
+  forall tr, In tr (examples_upto P alphabet 2) -> acceptsp tr = true.
 Proof.
   intros tr H. unfold examples_upto in H.
   exact (examples_upto_sound P (traces_upto P alphabet 2) tr H).
@@ -239,23 +298,23 @@ Qed.
     is FALSE, and Rocq tells you exactly which trace breaks it.
     ============================================================ *)
 
-Definition balanced (tr : Trace) : Prop := gen P tr /\ run P tr = Unlocked.
+Definition balanced (tr : Trace) : Prop := genp tr /\ runp tr = Unlocked.
 
 Lemma balanced_is_not_equivalent :
-  ~ (forall tr, balanced tr <-> accepts P tr = true).
+  ~ (forall tr, balanced tr <-> acceptsp tr = true).
 Proof.
   intro H.
   pose proof (H (Create :: LockAcquire :: nil)) as Hiff.
   destruct Hiff as [Hfwd Hback].
-  assert (Hacc : accepts P (Create :: LockAcquire :: nil) = true) by reflexivity.
+  assert (Hacc : acceptsp (Create :: LockAcquire :: nil) = true) by reflexivity.
   assert (Hbal : balanced (Create :: LockAcquire :: nil))
     by (apply Hback; assumption).
   destruct Hbal as [_ Hrun].
-  assert (Hheld : run P (Create :: LockAcquire :: nil) = Held) by reflexivity.
+  assert (Hheld : runp (Create :: LockAcquire :: nil) = Held) by reflexivity.
   congruence.
 Qed.
 
 Example counterexample_prefix :
-    accepts P (Create :: LockAcquire :: nil) = true
- /\ run P (Create :: LockAcquire :: nil) = Held.
+    acceptsp (Create :: LockAcquire :: nil) = true
+ /\ runp (Create :: LockAcquire :: nil) = Held.
 Proof. split; reflexivity. Qed.
