@@ -71,16 +71,16 @@ hand-written in all five, and is the only obligation whose difficulty
 tracks the grammar (right-linear ⇒ per-event induction; non-right-linear
 ⇒ a word cut).
 
-Two normalisation choices are *measured*, not assumed, and are recorded
-in the file that needed them:
+Two constraints on the automation, for anyone adding a model with a
+list- or guard-carrying nonterminal:
 
-* `mutex_waitqueue.v` / `rcu.v`: `case_of` must not be pointed at a
-  `list tid` (a `repeat` would not terminate), so the queue is opened
-  once, by hand, in the cells that read it.
-* `buffer.v`: `simpl` folds `Nat.leb 1 (length items)` into a raw match
-  on `length items`, and the production's guard can then no longer be
-  rebuilt -- so `gen_of_run` normalises with `cbn [run_from step
-  available]` instead.
+* Do not point `case_of` at a `list tid`: `destruct` on a list
+  introduces another list, so the `repeat` would not terminate.  The
+  queue is opened once, by hand, in the cells that read it
+  (`mutex_waitqueue.v`, `rcu.v`).
+* `simpl` folds `Nat.leb 1 (length items)` into a raw match on
+  `length items`, which loses the production's guard; normalise with
+  `cbn [run_from step available]` instead (`buffer.v`).
 
 ## Build and gates
 
@@ -98,16 +98,7 @@ nix develop ./nix -c bash -c '
 | all eight files above | compile clean, no warnings |
 | `grep "Theorem gen_iff_accepts" *.v` | exactly one hit, `protocol_lib.v` |
 | `grep "Admitted\|admit()\|assume()\|external_body" *.v` | no hits |
-| `git -C ../../vostd status --porcelain` | no tracked change *from this work* (see below) |
-
-`vostd` is read-only for this work. Its status currently reads ` M dv`:
-the `dv` submodule's working tree carries a **local, uncommitted**
-environment patch (toolchain auto-install commented out; system `z3`
-preferred over a download) dated *before* this work's first commit, in
-the `nix`/rustup-less setup. It is not committed, not pushed, and not
-part of this change; reverting it would remove the fix that lets Verus
-bootstrap without `rustup`, so it is left to the environment owner to
-decide.
+| `git -C ../../vostd status --porcelain` | no tracked change (vostd is read-only for this work) |
 
 `mutex.v` supplies the transition table and seven regression tests and
 does not depend on the library; `guard_demo.v` only exercises the
