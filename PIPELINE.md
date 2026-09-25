@@ -48,9 +48,26 @@ obligations.
    grammar-as-documentation vs machine-as-spec a meaningful comparison;
    taking code reintroduces the circularity 1.1 names as its largest
    risk (properties must come from outside the repository's own spec).
-2. **When is a non-right-linear production necessary?**  Nesting (RCU's
-   read/drop pairing) needs one; counts and queues can be carried by
-   parameterized nonterminals instead.  The criterion for choosing is
-   not written down anywhere yet.
+2. **When does a protocol need parameters, and when a non-right-linear
+   production?**  Draft criterion -- a hypothesis to be validated, not
+   a result:
+
+   * *Read off what `next` inspects to decide whether a step faults.*
+     Nothing unbounded ⇒ finite nonterminals, no parameters
+     (`mutex_grammar`).
+   * *If it does inspect something unbounded, is the discipline
+     stack-like?*  Pairing / LIFO ⇒ nesting suffices: a non-right-linear
+     production over finite nonterminals (`rcu`).  Not stack-like -- a
+     queue, or a value the machine resets (`Flush`) ⇒ the data has to
+     become a nonterminal parameter (`mutex_waitqueue`, `buffer`,
+     `mutex_param`).  The `{ww}` reduction in `DECISIONS.md` is the
+     proof that FIFO cannot be dodged this way.
+   * *If both would work, prefer the one that stays right-linear*, since
+     a right-linear grammar gets obligation 7 from the library
+     (measured: 4 of 5 models).
+
+   Validation is cheap and has not been done: apply the checklist to a
+   protocol that is not yet modelled, reading only its transition
+   table, and check the prediction against the model written afterwards.
 3. **Scope.**  Language equivalence only.  Temporal/fairness properties
    stay out, per 1.1's risk 7 ("safety first, fairness later").
