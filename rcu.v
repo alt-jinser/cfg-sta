@@ -43,6 +43,35 @@
                        | Read Body
                        | Read Body Drop Body
 
+   What is proved here (the spike: one file, no library):
+
+       gen_iff_accepts : forall tr, gen tr <-> accepts tr = true
+
+   ...and the architecture it forced, which is what the reusable
+   contract will have to carry:
+
+     * Soundness (->) runs through [ok s alpha], whose nonterminal
+       clause checks its tail at EVERY state the nonterminal can
+       reach.  Checking the tail only at [s] would be wrong -- the
+       nonterminal consumes input first -- and tying that clause to
+       the derivation is why [Reach] is defined over [derives].  Its
+       obligations are [prod_ok] (one per production; five of the six
+       cases are [reflexivity], [PB_cs] needs the net measure) and
+       [ok_init].  [soundness] is stated with [fix] rather than
+       [induction]: an [induction] replaces the head nonterminal's
+       sub-derivation by an induction hypothesis, and [Reach] needs
+       that derivation.
+
+     * Completeness (<-) is routed through the word-level predicate
+       [good], never through a state-indexed induction: from a count
+       above zero the machine accepts an extra [Drop] that no
+       production can derive ([safe 1 [Drop]] holds, [derives] does
+       not), so "same state, same conclusion" is simply false.  Both
+       sides are therefore characterized against [safe 0] after the
+       opening [Create], and the only real work is [body_complete] --
+       Dyck-prefix completeness, whose [Read] case needs the first
+       position where the count bottoms out ([dip_split]).
+
    Compiles with Rocq 9.1.1:  rocq compile rcu.v
 *)
 
@@ -390,4 +419,222 @@ Proof.
     unfold run in *.
     rewrite run_from_app.
     rewrite Htr. simpl. reflexivity.
+Qed.
+
+(** * ============================================================
+    Direction 1: generated traces do not fault. *)
+
+(** The per-production obligation, in the shape the contract will
+    generalize: an available nonterminal's production is safe where it
+    sits.
+
+    The two [epsilon] productions discharge themselves along the way --
+    [try discriminate] head-reduces [ok s nil] to [s <> Error].  What
+    remains are the four productions that start with a terminal; four
+    of their six sub-goals are [reflexivity], and [PB_cs] is the only
+    one that needs [reach_positive]. *)
+Lemma prod_ok : forall A beta s, prod A beta -> inv A s = true -> ok s beta.
+Proof.
+  intros A beta s Hp Hinv.
+  destruct Hp; unfold inv in Hinv; destruct s; try discriminate;
+    simpl in *; try discriminate.
+  - split; [ intro H; discriminate | ].    (* PR_body, Uninit *)
+    split; [ reflexivity | ].
+    intros s' [tr [Hd [Hr Hne]]]. exact Hne.
+  - split; [ intro H; discriminate | ].    (* PB_upd, Reading readers *)
+    split; [ reflexivity | ].
+    intros s' [tr [Hd [Hr Hne]]]. exact Hne.
+  - split; [ intro H; discriminate | ].    (* PB_read, Reading readers *)
+    split; [ reflexivity | ].
+    intros s' [tr [Hd [Hr Hne]]]. exact Hne.
+  - split; [ intro H; discriminate | ].    (* PB_cs, Reading readers *)
+    split; [ reflexivity | ].
+    intros s1 Hs1.
+    destruct (reach_positive readers s1 Hs1) as [k Hk]. subst s1.
+    split; [ simpl; intro H; discriminate | ].
+    split; [ simpl; reflexivity | ].
+    intros s2 [tr [Hd [Hr Hne]]]. exact Hne.
+Qed.
+
+Lemma ok_init : ok Uninit (Sn Program :: nil).
+Proof.
+  split; [ reflexivity | ].
+  intros s' [tr [Hd [Hr Hne]]]. exact Hne.
+Qed.
+
+(** The soundness theorem, in the shape the contract will generalize.
+
+    [fix] rather than [induction]: after an [induction] on the
+    derivation the sub-derivation of the head nonterminal has been
+    replaced by its induction hypothesis, and [Reach] needs exactly
+    that sub-derivation to place the continuation's state. *)
+Lemma soundness : forall alpha tr, derives alpha tr ->
+    forall s, ok s alpha -> run_from s tr <> Error.
+Proof.
+  fix soundness 3.
+  intros alpha tr H.
+  destruct H as [ | e alpha' tr' Hder
+                | A beta tr1 tr2 alpha' Hp Hder1 Hder2 ];
+    intros s Hok.
+  - simpl in *. exact Hok.
+  - simpl in *. destruct Hok as [Hs Hok'].
+    exact (soundness alpha' tr' Hder (step s e) Hok').
+  - rewrite run_from_app. destruct Hok as [Hinv Hok'].
+    pose proof (prod_ok A beta s Hp Hinv) as Hokb.
+    assert (Hne1 : run_from s tr1 <> Error)
+      by exact (soundness beta tr1 Hder1 s Hokb).
+    assert (Hs1 : Reach s A (run_from s tr1)).
+    { exists tr1. split.
+      - exact (derives_sn A beta tr1 Hp Hder1).
+      - split; [ reflexivity | exact Hne1 ]. }
+    exact (soundness alpha' tr2 Hder2 (run_from s tr1) (Hok' _ Hs1)).
+Qed.
+
+Lemma gen_run : forall tr, gen tr -> run tr <> Error.
+Proof.
+  intros tr Hg. unfold run.
+  exact (soundness (Sn Program :: nil) tr Hg Uninit ok_init).
+Qed.
+
+Lemma gen_accepts : forall tr, gen tr -> accepts tr = true.
+Proof.
+  intros tr Hg. apply accepts_iff. apply gen_run. exact Hg.
+Qed.
+
+(** * ============================================================
+    Direction 2: every safe trace is generated. *)
+
+(** Where the running count first reaches its floor.
+
+    Generalized over the floor [n] because the recursive cases move it:
+    a leading [Read] raises it by one before the cut is found.  The
+    word gets shorter in every recursive call, so plain structural
+    induction on the word suffices.
+
+    The split is placed at the FIRST position where the count bottoms
+    out, which is exactly what keeps the prefix [n]-safe; the suffix
+    comes out [0]-safe because it starts one below the floor. *)
+Lemma dip_split : forall tr n,
+    safe (S n) tr = true -> safe n tr = false ->
+    exists w1 w2, tr = w1 ++ Drop :: w2 /\
+        safe n w1 = true /\ safe 0 w2 = true.
+Proof.
+  induction tr as [| e tr IH]; intros n H1 H0.
+  - simpl in *. discriminate.
+  - destruct e; simpl in *.
+    + discriminate.
+    + destruct (IH (S n) H1 H0) as [w1 [w2 [Heq [Hw1 Hw2]]]].
+      subst tr. exists (Read :: w1), w2.
+      split; [ reflexivity | split; [ simpl; exact Hw1 | exact Hw2 ] ].
+    + destruct n.
+      * exists nil, tr.
+        split; [ reflexivity | split; [ reflexivity | exact H1 ] ].
+      * destruct (IH n H1 H0) as [w1 [w2 [Heq [Hw1 Hw2]]]].
+        subst tr. exists (Drop :: w1), w2.
+        split; [ reflexivity | split; [ simpl; exact Hw1 | exact Hw2 ] ].
+    + destruct (IH n H1 H0) as [w1 [w2 [Heq [Hw1 Hw2]]]].
+      subst tr. exists (Update :: w1), w2.
+      split; [ reflexivity | split; [ simpl; exact Hw1 | exact Hw2 ] ].
+Qed.
+
+(** Completeness, stated at PRODUCTION level rather than as
+    [derives (Sn Body :: nil) tr].
+
+    The recursive cases need the head production of the sub-word to
+    feed [D_sn] directly: inverting [derives (Sn A :: alpha) w] would
+    mean taking apart [w = tr1 ++ tr2], and unification cannot split a
+    concatenation.  [derives_sn] turns the conclusion back into the
+    usual form whenever it is wanted. *)
+Lemma body_complete : forall len tr, length tr <= len ->
+    safe 0 tr = true ->
+    exists beta, prod Body beta /\ derives beta tr.
+Proof.
+  induction len as [| len IH]; intros tr Hlen Hsafe.
+  - destruct tr as [| e tr]; [ exists nil; split; [ constructor | constructor ] | ].
+    simpl in Hlen. lia.
+  - destruct tr as [| e tr].
+    + exists nil; split; [ constructor | constructor ].
+    + simpl in Hlen. destruct e; simpl in Hsafe.
+      * discriminate.                       (* Create *)
+      * (* Read *)
+        destruct (safe 0 tr) eqn: H0.
+        -- (* prefix is itself balanced: Read + inner *)
+           destruct (IH tr ltac:(lia) H0) as [beta0 [Hp0 Hd0]].
+           exists (Se Read :: Sn Body :: nil). split; [ constructor | ].
+           apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+        -- (* the count bottoms out inside [tr]: read-body-drop *)
+           destruct (dip_split tr 0 Hsafe H0)
+             as [w1 [w2 [Heq [Hw1 Hw2]]]].
+           subst tr.
+           rewrite length_app in Hlen. simpl in Hlen.
+           destruct (IH w1 ltac:(lia) Hw1) as [beta1 [Hp1 Hd1]].
+           destruct (IH w2 ltac:(lia) Hw2) as [beta2 [Hp2 Hd2]].
+           exists (Se Read :: Sn Body :: Se Drop :: Sn Body :: nil).
+           split; [ constructor | ].
+           apply D_se.
+           exact (D_sn Body beta1 w1 (Drop :: w2)
+                    (Se Drop :: Sn Body :: nil) Hp1 Hd1
+                    (D_se Drop (Sn Body :: nil) w2
+                      (derives_sn Body beta2 w2 Hp2 Hd2))).
+      * discriminate.                       (* Drop at 0 *)
+      * (* Update *)
+        destruct (IH tr ltac:(lia) Hsafe) as [beta0 [Hp0 Hd0]].
+        exists (Se Update :: Sn Body :: nil). split; [ constructor | ].
+        apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+Qed.
+
+Lemma body_complete0 : forall tr, safe 0 tr = true ->
+    exists beta, prod Body beta /\ derives beta tr.
+Proof.
+  intros tr H. apply (body_complete (length tr)); [ apply le_n | exact H ].
+Qed.
+
+(** The recognizer is safe exactly when the trace starts with [Create]
+    and the rest never underflows. *)
+Definition good (tr : list Event) : bool :=
+  match tr with
+  | nil           => true
+  | Create :: tr' => safe 0 tr'
+  | _ :: _        => false
+  end.
+
+Lemma run_good : forall tr, run tr <> Error <-> good tr = true.
+Proof.
+  induction tr as [| e tr IH]; simpl.
+  - split; [ reflexivity | intro Hx; discriminate ].
+  - destruct e; simpl in *.
+    + exact (run_reading_safe tr 0).
+    + split; [ intro H; exfalso; apply H; apply run_from_err
+             | intro H; discriminate H ].
+    + split; [ intro H; exfalso; apply H; apply run_from_err
+             | intro H; discriminate H ].
+    + split; [ intro H; exfalso; apply H; apply run_from_err
+             | intro H; discriminate H ].
+Qed.
+
+Lemma accepts_good : forall tr, accepts tr = true <-> good tr = true.
+Proof.
+  intros tr. rewrite accepts_iff. exact (run_good tr).
+Qed.
+
+Lemma good_gen : forall tr, good tr = true -> gen tr.
+Proof.
+  induction tr as [| e tr IH]; simpl; intro H.
+  - exact (derives_sn Program nil nil PR_nil D_base).
+  - destruct e.
+    + destruct (body_complete0 tr H) as [beta0 [Hp0 Hd0]].
+      apply (derives_sn Program (Se Create :: Sn Body :: nil) (Create :: tr)
+               PR_body).
+      apply D_se. apply (derives_sn Body beta0 tr Hp0 Hd0).
+    + discriminate.
+    + discriminate.
+    + discriminate.
+Qed.
+
+(** * The headline theorem, for this model. *)
+Theorem gen_iff_accepts : forall tr, gen tr <-> accepts tr = true.
+Proof.
+  intros tr. split.
+  - intro H. apply gen_accepts. exact H.
+  - intro H. apply accepts_good in H. apply good_gen. exact H.
 Qed.
