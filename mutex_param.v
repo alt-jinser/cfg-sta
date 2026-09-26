@@ -6,7 +6,10 @@
       the state space {Uninitialized} + {Unlocked} + {Held t | t : nat} +
       {Error} is INFINITE.  It is no longer a finite automaton -- which
       is why the grammar needs a *parameterized nonterminal* H(o) and a
-      regular language will not do.
+      regular language will not do.  The refinement is documented:
+      `ostd/docs/sync-protocol/mutex-fsm.md` defines
+      `guard_drop(m,t2,g), t2 != t` as `wrong_owner_unlock`, keeping
+      ownership precisely because the guard is `!Send`.
 
        Program -> epsilon | Create U
 

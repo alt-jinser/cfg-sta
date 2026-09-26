@@ -51,8 +51,12 @@ obligations.
    risk (properties must come from outside the repository's own spec).
    Provenance is measurable across the three protocols, and only one of
    them separates cleanly: `mutex_grammar` takes its table from
-   `mutex.rkt` and its grammar from the discipline prose -- two
-   artifacts.  `rcu.v` takes both sides from the implementation, and
+   `mutex.rkt` (the Redex prototype; only in git history now -- added
+   `ec1202f`, dropped `cda871b`) and its grammar from
+   `ostd/docs/sync-protocol/mutex-regular-language.md`, the document
+   that defines that exact alphabet and table -- two artifacts.
+   `mutex_param.v`'s identity parameter cites `mutex-fsm.md` in the
+   same directory.  `rcu.v` takes both sides from the implementation, and
    the reason was checked rather than assumed: `ostd/specs/sync/rcu/`
    exists but covers allocation registration and publication identity
    only, and `root.rs` says outright that "physical ownership, reader
