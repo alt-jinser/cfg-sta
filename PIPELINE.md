@@ -136,6 +136,16 @@ obligations.
      `rwmutex.rs:520` add it to mutex's two verbs -- same
      no-pairing / `&mut self` argument, still unlisted in the models'
      own scope notes.
+
+   **Pilot 4, done** -- `rcu`, the last protocol: `Rcu<` appears in
+   2 kernel files (console, cgroupfs) exercising every model event --
+   `Rcu::new` (x5), `.read()` (x6), `.update()` (x4), release at
+   scope end.  No explicit `.drop()` anywhere, and none is owed at
+   runtime: the guard's only runtime protection field
+   (`DisabledPreemptGuard`) is field-dropped, while the manual `drop`
+   (marked VERUS LIMITATION) returns the *ghost* token that verified
+   callers owe.  The model's `Drop` event = the end of the read
+   section on both sides.
 2. **When does a protocol need parameters, and when a non-right-linear
    production?**  Draft criterion -- a hypothesis to be validated, not
    a result:

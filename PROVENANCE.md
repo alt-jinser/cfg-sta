@@ -45,7 +45,7 @@ is the reference):
 | `rwlock` | -- | -- | -- | -- | `src/sync/rwlock.rs` + invariant | `asterinas/kernel` (pilot 3) |
 | `spin` | -- | -- | -- | -- | `src/sync/spin.rs` | `asterinas/kernel` (pilot 1) |
 | `rwmutex` | -- | -- | -- | -- | `src/sync/rwmutex.rs` | `asterinas/kernel` (pilot 3) |
-| `rcu` | -- | -- | -- | partial: `specs/sync/rcu/` defers reader protection -- the documented gap | `src/sync/rcu/` | `Rcu<...>` uses exist in the kernel, not yet read |
+| `rcu` | -- | -- | -- | partial: `specs/sync/rcu/` defers reader protection -- the documented gap | `src/sync/rcu/` | `asterinas/kernel`: 2 files, all four events (`Rcu::new`, `.read()`, `.update()`, scope-end release) (pilot 4) |
 
 Three of the five real protocols have exactly two layers --
 implementation, plus the client view this audit supplied -- so their
