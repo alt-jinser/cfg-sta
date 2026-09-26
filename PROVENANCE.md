@@ -34,6 +34,27 @@ deliberate simplification recorded in the model's own header.
 | `spin` | `spin.rs:223/270/588` -- line references land exactly | same file | single source; no spec |
 | `rwmutex` | `rwmutex.rs:327-360/692/877` -- line references land exactly | same file | single source; no spec |
 
+## Layer coverage
+
+Which evidence layers each protocol actually has (mutex's full stack
+is the reference):
+
+| protocol | inventory / API scope | language or FSM doc | identity / queue spec | Verus spec | implementation | client traces |
+|---|---|---|---|---|---|---|
+| `mutex` | `mutex-inventory.md` | `mutex-regular-language.md` | `mutex-fsm.md`, `mutex_tla.rs`, `mutex_verussync.rs` | `specs/sync/mutex_protocol.rs` | `src/sync/mutex.rs` | `asterinas/kernel` -- the inventory asks for these |
+| `rwlock` | -- | -- | -- | -- | `src/sync/rwlock.rs` + invariant | `asterinas/kernel` (pilot 3) |
+| `spin` | -- | -- | -- | -- | `src/sync/spin.rs` | `asterinas/kernel` (pilot 1) |
+| `rwmutex` | -- | -- | -- | -- | `src/sync/rwmutex.rs` | `asterinas/kernel` (pilot 3) |
+| `rcu` | -- | -- | -- | partial: `specs/sync/rcu/` defers reader protection -- the documented gap | `src/sync/rcu/` | `Rcu<...>` uses exist in the kernel, not yet read |
+
+Three of the five real protocols have exactly two layers --
+implementation, plus the client view this audit supplied -- so their
+equivalence rests on those two, and writing the missing layers is
+1.1-shaped gap work.  One open item vostd flags itself:
+`mutex-inventory.md` calls `abstract_lock_tla.rs`'s unlock
+precondition (no `locked == true`, no owner) "a candidate for
+differential checking, not yet a confirmed specification bug".
+
 ## What the audit changed
 
 * Line references in model headers were re-checked and are exact;
