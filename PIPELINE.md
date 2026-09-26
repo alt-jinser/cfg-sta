@@ -27,7 +27,7 @@ Measured across the eight models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
-| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) |
+| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) -- and hand-written alphabets also miss real operations: the `spin` pilot found 37 `disable_irq().lock()` sites with no event in `spin.v` | |
 | transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
 | obligations 1–3 (glue) | fully mechanical | 8/8 |
 | obligation 4 (`prod_ok`) | mechanical | 7/8; the eighth needs the net measure |
@@ -65,6 +65,27 @@ obligations.
    1.1's own vocabulary.  `rwlock.v` has no spec at all, so both sides
    come from implementation + Verus invariant.  The equivalence is only
    as informative as that separation.
+
+   **Pilot, done** -- deriving `spin`'s side from real call sites in
+   `asterinas/kernel` (131 `SpinLock` mentions; sampled at futex,
+   console, uart, virtio):
+
+   * *The alphabet is incomplete.*  `disable_irq().lock()` -- the
+     `PreemptDisabled -> LocalIrqDisabled` mode cast -- occurs 37
+     times and has no event in `spin.v`.  Conversely the decision to
+     exclude `try_lock` is upheld: 0 real uses (the one apparent hit
+     is a `Mutex`, not a `SpinLock`).
+   * *The grammar's oddity is confirmed.*  9 client functions return
+     a `SpinLockGuard`, so real traces do end while holding the lock
+     -- exactly the prefix closure `spin.v` allows, which the original
+     `mutex.rkt` reading did not.
+   * *Provenance must name the tree.*  Clients exercise
+     `asterinas/ostd`, our material comes from `vostd/ostd`, and all
+     12 files under `sync/` differ between the two -- including
+     `SpinLockGuard`'s `Drop` (present there; commented out here as a
+     Verus limitation).  Independence is thus stronger than "different
+     file" -- it is different code -- and version drift becomes a risk
+     to state rather than an assumption.
 2. **When does a protocol need parameters, and when a non-right-linear
    production?**  Draft criterion -- a hypothesis to be validated, not
    a result:
