@@ -37,11 +37,11 @@ statement of completeness is *false* in general (see the header of
 
 | file | lines | nonterminals | productions | grammar shape |
 |---|---|---|---|---|
-| `mutex_grammar.v` | 320 | `Program`, `U`, `H` | 13 | right-linear, finite |
-| `mutex_param.v` | 323 | `Program`, `U`, `H(o)` | 13 | parameterized; retry-budget guard on two productions |
-| `mutex_waitqueue.v` | 527 | `Program`, `U`, `H(o,w)`, `W(q)` | 21 | parameterized by a **queue**; `wake_info` reads the head |
-| `buffer.v` | 307 | `Program`, `Buf(n)`, `Cl` | 10 | parameterized by the **count**; `Get` guarded by `1 <= n` |
-| `rcu.v` | 566 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
+| `mutex_grammar.v` | 287 | `Program`, `U`, `H` | 13 | right-linear, finite |
+| `mutex_param.v` | 273 | `Program`, `U`, `H(o)` | 13 | parameterized; retry-budget guard on two productions |
+| `mutex_waitqueue.v` | 470 | `Program`, `U`, `H(o,w)`, `W(q)` | 21 | parameterized by a **queue**; `wake_info` reads the head |
+| `buffer.v` | 269 | `Program`, `Buf(n)`, `Cl` | 10 | parameterized by the **count**; `Get` guarded by `1 <= n` |
+| `rcu.v` | 570 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
 | `rwlock.v` | 281 | `RwRead n`, `RwWrite` | 6 (+2 ε) | count-parameterized, right-linear; **no protocol spec exists**, so both sides come from the implementation (see `PIPELINE.md`, open question 1) |
 | `spin.v` | 249 | `NFree`, `NHeld` | 6 (+2 ε) | finite, right-linear; **no protocol spec** (implementation only) |
 | `rwmutex.v` | 350 | `NReaders n`, `NUpReader n`, `NWriter` | 14 (+3 ε) | count-parameterized ×2, right-linear mode conversions; **no protocol spec** (implementation only) |
