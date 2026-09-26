@@ -141,12 +141,10 @@ Lemma ob_word_ok_run : forall tr,
     run Uninitialized step tr <> Error <-> wellformed tr.
 Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
-(** Direction 2: a safe run from an available nonterminal is derivable
-    from it.  Same shape as mutex_grammar's, plus one guard split (the
-    owner match) which the chain peels off before the cases are read --
-    ten cases survive, one per real transition. *)
-(** The two witnesses [gen_of_run] asks for; the library owns the
-    induction. *)
+(** Direction 2: the library owns the induction (the model owes
+    [nil_prod] and [step_prod]); the chain is mutex_grammar's plus one
+    guard split (the owner match), and ten cases survive -- one per
+    real transition. *)
 Lemma nil_prod : forall A, productions A nil.
 Proof. intros A; destruct A; constructor. Qed.
 
@@ -224,7 +222,6 @@ Notation genp := (gen (prod P) (start P)).
     What the parameter actually buys you
     ============================================================ *)
 
-(* --- the identity guard: releasing someone else's lock is an error --- *)
 Example drop_by_other_rejected :
   acceptsp (Create :: LockAcquire 0 :: GuardDrop 1 :: nil) = false.
 Proof. reflexivity. Qed.
@@ -233,7 +230,6 @@ Example drop_by_owner_accepted :
   acceptsp (Create :: LockAcquire 0 :: GuardDrop 0 :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* --- and the grammar agrees in both directions --- *)
 Example gen_drop_by_owner : genp (Create :: LockAcquire 0 :: GuardDrop 0 :: nil).
 Proof. apply (gen_iff_accepts P). reflexivity. Qed.
 

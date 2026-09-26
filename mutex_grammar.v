@@ -113,15 +113,13 @@ Lemma ob_word_ok_run : forall tr,
     run Uninitialized step tr <> Error <-> wellformed tr.
 Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
-(** Direction 2, at the grammar's own level: a safe run from a state
-    where [A] is available is derivable from [A].  Right-linear
-    productions make this a per-event induction -- each production
-    consumes exactly one terminal, so the split of the word is forced
-    and no decomposition lemma is needed (contrast rcu.v, whose
-    [Read Body Drop Body] production does need one). *)
-(** The two witnesses [gen_of_run] asks for.  The library owns the
-    induction and the assembly of the derivation; all that is left
-    here is choosing a production. *)
+(** Direction 2: the library owns the induction and the assembly --
+    [gen_of_run] asks for two witnesses, so all the model owes is
+    choosing a production.  Right-linear productions make this a
+    per-event induction: each production consumes exactly one
+    terminal, so the split of the word is forced and no decomposition
+    lemma is needed (contrast rcu.v, whose [Read Body Drop Body]
+    production does need one). *)
 Lemma nil_prod : forall A, productions A nil.
 Proof. intros A; destruct A; constructor. Qed.
 
@@ -216,7 +214,6 @@ Proof. reflexivity. Qed.
 Example drop_without_lock_bad : acceptsp (Create :: GuardDrop :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* Constructing a trace from the productions directly. *)
 Example prefix_held_generated : genp (Create :: LockAcquire :: nil).
 Proof.
   apply (derives_sn productions Program (Se Create :: Sn U :: nil)
@@ -247,7 +244,6 @@ Example examples_upto_1 :
   examples_upto P alphabet 1 = nil :: (Create :: nil) :: nil.
 Proof. reflexivity. Qed.
 
-(** EVERY enumerated example is accepted -- not just the first one. *)
 Example enumerated_examples_are_accepted :
   forall tr, In tr (examples_upto P alphabet 2) -> acceptsp tr = true.
 Proof.

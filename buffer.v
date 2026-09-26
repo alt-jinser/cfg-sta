@@ -153,14 +153,11 @@ Lemma ob_word_ok_run : forall tr,
     run Uninitialized step tr <> Error <-> wellformed tr.
 Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
-(** Direction 2.  NOTE the normalisation: [cbn [run_from step available]]
-    rather than [simpl].  [simpl] folds [Nat.leb 1 (length items)] into a
-    raw match on [length items], and then the [Get] production's guard
-    could not be reconstructed -- [cbn] with an explicit delta list
-    leaves [Nat.leb] alone, so the guard survives as written. *)
-(** The two witnesses [gen_of_run] asks for; the library owns the
-    induction.  Normalisation stays [cbn ...] -- [simpl] would fold
-    [Nat.leb 1 (length items)] into a raw match and lose the guard. *)
+(** Direction 2: the library owns the induction ([gen_of_run] asks for
+    two witnesses; the model owes only the choice of production).
+    Normalisation MUST be [cbn [run_from step available]]: [simpl]
+    folds [Nat.leb 1 (length items)] into a raw match on the length
+    and loses the [Get] production's guard. *)
 Lemma nil_prod : forall A, productions A nil.
 Proof. intros A; destruct A; constructor. Qed.
 
@@ -241,19 +238,15 @@ Example producer_consumer_generated : genp
   (Setup :: Put 1 :: Put 2 :: Peek :: Get :: Flush :: Close :: nil).
 Proof. apply (gen_iff_accepts P). reflexivity. Qed.
 
-(* Taking from an empty buffer is an error. *)
 Example get_from_empty : acceptsp (Setup :: Get :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* Everything after Close is an error. *)
 Example put_after_close : acceptsp (Setup :: Close :: Put 1 :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* Peeking a closed buffer is a no-op, not an error. *)
 Example peek_after_close : acceptsp (Setup :: Close :: Peek :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* Examples handed to a developer really are accepted. *)
 Definition alphabet : list Event :=
   Setup :: Put 0 :: Get :: Peek :: Flush :: Close :: nil.
 

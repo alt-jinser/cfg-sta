@@ -538,15 +538,12 @@ Notation genp := (gen (prod P) (start P)).
 
 (** * Everything below is library-provided; these are just checks. *)
 
-(* The recognition criterion is prefix-closed: a trace may end while a
-   read is still outstanding.  The grammar accepts it too. *)
 Example prefix_read : acceptsp (Create :: Read :: nil) = true.
 Proof. reflexivity. Qed.
 
 Example balanced_ok : acceptsp (Create :: Read :: Drop :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* Dropping a token nobody took is exactly the misuse this models. *)
 Example drop_without_read_bad : acceptsp (Create :: Drop :: nil) = false.
 Proof. reflexivity. Qed.
 

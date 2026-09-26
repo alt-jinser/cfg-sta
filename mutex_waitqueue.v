@@ -275,17 +275,16 @@ Lemma ob_word_ok_run : forall tr,
     run Uninitialized step tr <> Error <-> wellformed tr.
 Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
-(** Direction 2.  The chain mirrors mutex_param's, plus one extra step:
-    [available] here is a conjunction of two equalities, so it is split
-    and both are pushed into the GOAL (not [subst]ed) -- rewriting keeps
-    the nonterminal in the state's own variable names, which is what the
-    case proofs below then read.
+(** Direction 2: the library owns the induction (the model owes
+    [nil_prod] and [step_prod]); the chain mirrors mutex_param's, plus
+    one extra step -- [available] here is a conjunction of two
+    equalities, split and both pushed into the GOAL (not [subst]ed):
+    rewriting keeps the nonterminal in the state's own variable names,
+    which is what the case proofs below then read.
 
     The queue itself is NOT destructed here: [case_of] must not touch a
     [list tid] (a `repeat` would not terminate), so the one cell that
     needs the queue -- `Waking q, Wake t` -- opens it by hand. *)
-(** The two witnesses [gen_of_run] asks for; the library owns the
-    induction. *)
 Lemma nil_prod : forall A, productions A nil.
 Proof. intros A; destruct A; constructor. Qed.
 
@@ -450,11 +449,9 @@ Proof.
   intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
 Qed.
 
-(* Waking nobody is an error -- nothing was queued. *)
 Example wake_without_waiter : acceptsp
   (Create :: LockAcquire 0 :: GuardDrop 0 :: Wake 1 :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* Waiting on a free lock is an error: there is nothing to wait for. *)
 Example wait_on_free_lock : acceptsp (Create :: Wait 0 :: nil) = false.
 Proof. reflexivity. Qed.

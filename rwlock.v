@@ -253,28 +253,22 @@ Notation genp := (gen (prod P) (start P)).
 
 (** * What the model says *)
 
-(* concurrent readers: two of them, then both leave *)
 Example two_readers : acceptsp (Read :: Read :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* a writer has to wait until the readers are gone *)
 Example writer_while_reading : acceptsp (Read :: Write :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* and a reader has to wait until the writer is gone *)
 Example reader_while_writing : acceptsp (Write :: Read :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* a release no guard accounts for is the misuse case *)
 Example release_without_guard : acceptsp (ReadDrop :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* balanced usage is both accepted and generated *)
 Example balanced_generated :
     genp (Read :: Read :: ReadDrop :: ReadDrop :: nil).
 Proof. apply (gen_iff_accepts P). reflexivity. Qed.
 
-(* ...and contention is not generated either *)
 Example contention_not_generated : ~ genp (Read :: Write :: nil).
 Proof.
   intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.

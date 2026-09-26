@@ -214,19 +214,15 @@ Notation genp := (gen (prod P) (start P)).
 
 (** * What the model says *)
 
-(* acquisition, then release *)
 Example lock_unlock : acceptsp (Lock :: Unlock :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* the trace may end while the lock is held *)
 Example held_prefix : acceptsp (Lock :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* a second acquisition would spin until the release *)
 Example double_lock : acceptsp (Lock :: Lock :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* releasing a lock no guard holds is the misuse case *)
 Example unlock_while_free : acceptsp (Unlock :: nil) = false.
 Proof. reflexivity. Qed.
 
@@ -235,7 +231,6 @@ Example cast_lock_unlock :
     acceptsp (DisableIrq :: Lock :: Unlock :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* casting while holding touches no guard *)
 Example cast_while_held :
     acceptsp (Lock :: DisableIrq :: Unlock :: nil) = true.
 Proof. reflexivity. Qed.

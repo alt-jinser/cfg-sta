@@ -314,29 +314,23 @@ Notation genp := (gen (prod P) (start P)).
 
 (** * What the model says *)
 
-(* concurrent readers, then both leave *)
 Example two_readers : acceptsp (Read :: Read :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* an upreader with nobody else may upgrade immediately *)
 Example upread_upgrade : acceptsp (UpRead :: Upgrade :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* ...but not while another reader remains: [upgrade] spins *)
 Example upgrade_with_reader :
     acceptsp (Read :: UpRead :: Upgrade :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* only one upreader at a time *)
 Example second_upreader : acceptsp (UpRead :: UpRead :: nil) = false.
 Proof. reflexivity. Qed.
 
-(* the full mode cycle: write -> downgrade -> release *)
 Example downgrade_cycle :
     acceptsp (Write :: Downgrade :: UpReadDrop :: nil) = true.
 Proof. reflexivity. Qed.
 
-(* a writer makes readers sleep, which we model as cannot-complete *)
 Example writer_blocks_read : acceptsp (Write :: Read :: nil) = false.
 Proof. reflexivity. Qed.
 
