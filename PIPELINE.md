@@ -66,7 +66,8 @@ obligations.
    formalizes -- a guard dropped that no read is outstanding for -- has
    no spec clause behind it; it exists only in code, and our grammar is
    the first written form of the discipline.  That is a gap report in
-   1.1's own vocabulary.  `rwlock.v` has no spec at all, so both sides
+   1.1's own vocabulary.  `rwlock.v` has no spec at all (checked
+   under `specs/` and `docs/`), so both sides
    come from implementation + Verus invariant.  The equivalence is only
    as informative as that separation.
 
@@ -91,6 +92,29 @@ obligations.
      Verus limitation).  Independence is thus stronger than "different
      file" -- it is different code -- and version drift becomes a risk
      to state rather than an assumption.
+
+   **Pilot 2, done** -- the same pass over `mutex` (170 `Mutex<`
+   mentions in `asterinas/kernel`):
+
+   * *Usage confirms the shape again.*  6 client functions return a
+     `MutexGuard`, one of them storing it in a struct field
+     (`process/mod.rs:195`), and `mutex.rs:262` comments out
+     `impl Drop` exactly as `spin.rs` does -- so `GuardDrop` is the
+     live release path.
+   * *No spin-shaped gap.*  `mutex.rs` has no mode cast (0 hits), and
+     `try_lock` has exactly 1 real use, single-shot -- corroborating
+     the removal of this repository's retry budget (`DECISIONS.md`).
+   * *Two public verbs stay out of the alphabet:* `get_mut` and
+     `MutexGuard::get_lock` touch no pairing and are guarded by
+     `&mut self` / the borrow checker -- out of scope the way
+     `try_lock` is for `rwlock.v`.
+   * *Lesson for provenance searches:* the discipline documents live
+     under `ostd/docs/sync-protocol/`, not `specs/` -- a source audit
+     that stops at `specs/` reports false gaps (this one did).  The
+     same check under `docs/` keeps `rwlock.v`'s and `rcu.v`'s
+     "no protocol spec" claims intact; `docs/sync-protocol/README.md`
+     calls mutex "the first complete synchronization-protocol
+     result".
 2. **When does a protocol need parameters, and when a non-right-linear
    production?**  Draft criterion -- a hypothesis to be validated, not
    a result:
