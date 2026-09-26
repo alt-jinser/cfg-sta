@@ -55,6 +55,24 @@ Two of these parameters are forced, not decorative:
   queue-free nonterminal would wake a waiter when nobody is queued.
   `rcu.v`'s header records the same argument for its grammar.
 
+## Candidates ruled out
+
+Every file under `ostd/src/sync/` now has a verdict: five are modeled
+above (`mutex`, `rwlock`, `rwmutex`, `spin`, `rcu`); the rest are not
+protocols F1 can express.
+
+* `guard.rs` -- the `SpinGuardian` / `GuardTransfer` trait layer the
+  locks parameterize on.  Its single transfer site is
+  `rwlock.rs:1036`, inside `RwLock::upgrade` -- the upgrade machinery
+  `rwlock.v` already declares out of scope -- so it has no
+  client-facing trace of its own.
+* `rwarc.rs` -- `Arc<RwLock<T>>` plus a uniqueness count.  Every live
+  operation delegates to the RwLock that `rwlock.v` models; the one
+  distinguishing operation (`get`, `Some` only when unique) is a
+  commented-out Option report.  A report is not a fault -- the
+  boundary `DECISIONS.md` records for `wait`.
+* `wait.rs` -- see `DECISIONS.md`.
+
 ## How each model discharges the obligations
 
 `mech` = closed by `discharge`/`discharge_prod` (case analysis over the
