@@ -9,6 +9,8 @@ all:
 check: all
 	@test $$(grep -l "Theorem gen_iff_accepts" $(SOURCES) | wc -l) -eq 1
 	@! grep -n "Admitted\|admit()\|assume()\|external_body" $(SOURCES)
+	@out=$$(git -C ../vostd status --porcelain --ignore-submodules=dirty); \
+	  if [ -n "$$out" ]; then echo "$$out"; exit 1; fi
 	@echo "build + gates OK"
 
 .PHONY: all check

@@ -112,7 +112,7 @@ make check    # build, then the gates below
 | all eleven files above | compile clean, no warnings |
 | `grep "Theorem gen_iff_accepts" *.v` | exactly one hit, `protocol_lib.v` |
 | `grep "Admitted\|admit()\|assume()\|external_body" *.v` | no hits |
-| `git -C ../../vostd status --porcelain` | no tracked change (vostd is read-only for this work) |
+| `git -C ../vostd status --porcelain --ignore-submodules=dirty` | no output: vostd is read-only for this work (the dirty `dv` submodule is ignored, by decision) |
 
 `mutex.v` supplies the transition table and seven regression tests and
 does not depend on the library; `guard_demo.v` only exercises the
