@@ -27,7 +27,7 @@ Measured across the eight models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
-| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) -- and hand-written alphabets also miss real operations: the `spin` pilot found 37 `disable_irq().lock()` sites with no event in `spin.v` | |
+| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) -- and hand-written alphabets also miss real operations: the `spin` alphabet had no event for `disable_irq().lock()` though the kernel calls it 37 times -- the client view caught it, and the model was amended (`DisableIrq`) |
 | transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
 | obligations 1–3 (glue) | fully mechanical | 8/8 |
 | obligation 4 (`prod_ok`) | mechanical | 7/8; the eighth needs the net measure |
@@ -70,11 +70,12 @@ obligations.
    `asterinas/kernel` (131 `SpinLock` mentions; sampled at futex,
    console, uart, virtio):
 
-   * *The alphabet is incomplete.*  `disable_irq().lock()` -- the
+   * *The alphabet was incomplete.*  `disable_irq().lock()` -- the
      `PreemptDisabled -> LocalIrqDisabled` mode cast -- occurs 37
-     times and has no event in `spin.v`.  Conversely the decision to
-     exclude `try_lock` is upheld: 0 real uses (the one apparent hit
-     is a `Mutex`, not a `SpinLock`).
+     times and had no event in `spin.v`; the model now carries it as
+     `DisableIrq`, a stutter in both modes.  Conversely the decision
+     to exclude `try_lock` is upheld: 0 real uses (the one apparent
+     hit is a `Mutex`, not a `SpinLock`).
    * *The grammar's oddity is confirmed.*  9 client functions return
      a `SpinLockGuard`, so real traces do end while holding the lock
      -- exactly the prefix closure `spin.v` allows, which the original

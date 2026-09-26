@@ -2,7 +2,7 @@
 
    Provenance: ostd/src/sync/spin.rs.  The lock state is a single
    boolean -- `is (locked: bool, resource: Option<SpinLockResource>)`
-   -- and the two events are its two transitions:
+   -- and three events: its two transitions plus the IRQ mode cast:
 
      * `SpinLock::lock()` (spin.rs:270) acquires and returns a
        `SpinLockGuard`;
@@ -11,7 +11,16 @@
        LIMITATION: We implement `drop` and call it manually because
        Verus's support for `Drop` is incomplete for now", so the
        release path is an explicit call -- that is what `Unlock` below
-       refers to.
+       refers to;
+     * `SpinLock::disable_irq()` (spin.rs:223, on
+       `SpinLock<T, PreemptDisabled>`) casts `&self` to
+       `&SpinLock<T, LocalIrqDisabled>`: a mode cast, no guard
+       involved, so neither the lock nor the pairing discipline
+       changes.  It is one-way at the type level (there is no
+       `enable_irq`), but it does not consume `&self`, so a client may
+       call it repeatedly -- which is why the state does not track the
+       IRQ mode: the mode cannot decide whether an acquire pairs with
+       a release.
 
    No protocol spec exists (ostd/specs/sync/ holds only mutex_protocol,
    rcu/ and the mutex examples), so as in rwlock.v both sides come from
@@ -49,6 +58,14 @@
    data point -- `next` reads no unbounded data, the grammar carries no
    parameter, same branch as mutex_grammar.
 
+   AMENDMENT (after PIPELINE.md's client pilot): `DisableIrq` joined
+   the alphabet because `asterinas/kernel` calls `disable_irq().lock()`
+   37 times and the model had no event for it.  It stutters in both
+   modes, so every claim above still holds in shape -- finite,
+   right-linear, mechanical obligation 4, the two witnesses, no net
+   measure -- but step_prod grew from the predicted two cells to four.
+   The prediction is left as written; this note is the correction.
+
    Compiles with Rocq 9.1.1:  rocq compile spin.v
 *)
 
@@ -68,24 +85,28 @@ Inductive State : Type :=
 
 Inductive Event : Type :=
 | Lock
-| Unlock.
+| Unlock
+| DisableIrq.
 
 Definition is_err (s : State) : bool :=
   match s with Error => true | _ => false end.
 
 (** The transition matrix, nested per state (see the constraints in
-    MODELS.md). *)
+    MODELS.md).  [DisableIrq] is a stutter in both modes: a mode cast
+    touches no guard. *)
 Definition step (s : State) (e : Event) : State :=
   match s with
   | Free =>
       match e with
-      | Lock   => Locked
-      | Unlock => Error    (* releasing a lock no guard holds *)
+      | Lock       => Locked
+      | Unlock     => Error    (* releasing a lock no guard holds *)
+      | DisableIrq => Free
       end
   | Locked =>
       match e with
-      | Lock   => Error     (* would spin until the release *)
-      | Unlock => Free
+      | Lock       => Error     (* would spin until the release *)
+      | Unlock     => Free
+      | DisableIrq => Locked
       end
   | Error => Error
   end.
@@ -100,7 +121,9 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
 | PR_nilF   : productions NFree nil
 | PR_nilH   : productions NHeld nil
 | PR_lock   : productions NFree (Se Lock :: Sn NHeld :: nil)
-| PR_unlock : productions NHeld (Se Unlock :: Sn NFree :: nil).
+| PR_unlock : productions NHeld (Se Unlock :: Sn NFree :: nil)
+| PR_irqF   : productions NFree (Se DisableIrq :: Sn NFree :: nil)
+| PR_irqH   : productions NHeld (Se DisableIrq :: Sn NHeld :: nil).
 
 Definition available (A : Nt) (s : State) : bool :=
   match A, s with
@@ -152,8 +175,12 @@ Proof.
     try (exfalso; apply Hne; reflexivity).
   - (* free / Lock *)
     exists NHeld. split; [ exact PR_lock | reflexivity ].
+  - (* free / DisableIrq: the cast leaves the lock as it is *)
+    exists NFree. split; [ exact PR_irqF | reflexivity ].
   - (* held / Unlock *)
     exists NFree. split; [ exact PR_unlock | reflexivity ].
+  - (* held / DisableIrq *)
+    exists NHeld. split; [ exact PR_irqH | reflexivity ].
 Qed.
 
 Lemma ob_word_ok_gen : forall tr,
@@ -201,6 +228,16 @@ Proof. reflexivity. Qed.
 
 (* releasing a lock no guard holds is the misuse case *)
 Example unlock_while_free : acceptsp (Unlock :: nil) = false.
+Proof. reflexivity. Qed.
+
+(* the IRQ mode cast from the real call site `disable_irq().lock()` *)
+Example cast_lock_unlock :
+    acceptsp (DisableIrq :: Lock :: Unlock :: nil) = true.
+Proof. reflexivity. Qed.
+
+(* casting while holding touches no guard *)
+Example cast_while_held :
+    acceptsp (Lock :: DisableIrq :: Unlock :: nil) = true.
 Proof. reflexivity. Qed.
 
 Example lock_unlock_generated : genp (Lock :: Unlock :: nil).

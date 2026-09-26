@@ -43,7 +43,7 @@ statement of completeness is *false* in general (see the header of
 | `buffer.v` | 307 | `Program`, `Buf(n)`, `Cl` | 10 | parameterized by the **count**; `Get` guarded by `1 <= n` |
 | `rcu.v` | 566 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
 | `rwlock.v` | 281 | `RwRead n`, `RwWrite` | 4 (+2 ε) | count-parameterized, right-linear; **no protocol spec exists**, so both sides come from the implementation (see `PIPELINE.md`, open question 1) |
-| `spin.v` | 212 | `NFree`, `NHeld` | 4 (+2 ε) | finite, right-linear; **no protocol spec** (implementation only) |
+| `spin.v` | 249 | `NFree`, `NHeld` | 6 (+2 ε) | finite, right-linear; **no protocol spec** (implementation only) |
 | `rwmutex.v` | 350 | `NReaders n`, `NUpReader n`, `NWriter` | 14 (+3 ε) | count-parameterized ×2, right-linear mode conversions; **no protocol spec** (implementation only) |
 
 Two of these parameters are forced, not decorative:
@@ -70,7 +70,7 @@ completeness induction (`gen_of_run`); `hand` = proof written out.
 | `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **witness**: 7 cases |
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
 | `rwlock` | mech, 1-line, 1-line | mech + 1 availability cleanup | 1-line + 1-line | **witness**: 4 cases |
-| `spin` | mech, 1-line, 1-line | mech | 1-line + 1-line | **witness**: 2 cases |
+| `spin` | mech, 1-line, 1-line | mech | 1-line + 1-line | **witness**: 4 cases |
 | `rwmutex` | mech, 1-line, 1-line | mech + count cleanup | 1-line + 1-line | **witness**: 10 cells, 11 leaves |
 
 Obligation 4 is mechanical for seven of the eight models.  Obligation 7
