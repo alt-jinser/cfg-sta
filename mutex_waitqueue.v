@@ -41,14 +41,14 @@
 
        Program -> epsilon | Create U
        U       -> epsilon | lock-call t U | try-lock-fail t U
-                      | try-lock-call t U          when n <= MAX_RETRY
+                      | try-lock-call t U
                       | lock-acquire t H(t,nil) | try-lock-success t H(t,nil)
        H(o,w)  -> epsilon | lock-call t H(o,w) | try-lock-fail t H(o,w)
-                      | try-lock-call t H(o,w)     when n <= MAX_RETRY
+                      | try-lock-call t H(o,w)
                       | wait t H(o, w++[t])
                       | guard-drop o W(w)          <-- tied to the owner
        W(q)    -> epsilon | lock-call t W(q) | try-lock-fail t W(q)
-                      | try-lock-call t W(q)       when n <= MAX_RETRY
+                      | try-lock-call t W(q)
                       | lock-acquire t H(t,q) | try-lock-success t H(t,q)
                       | wake t H(t,tl)             when q = t :: tl
 
@@ -68,9 +68,6 @@ Open Scope bool_scope.
 
 Definition tid := nat.
 
-(** The numeric guard, as in mutex_param.v: 参数 > 10. *)
-Definition MAX_RETRY : nat := 10.
-
 Inductive State : Type :=
 | Uninitialized
 | Unlocked
@@ -82,7 +79,7 @@ Inductive Event : Type :=
 | Create
 | LockCall       (t : tid)
 | LockAcquire    (t : tid)
-| TryLockCall    (t : tid) (n : nat)
+| TryLockCall    (t : tid)
 | TryLockSuccess (t : tid)
 | TryLockFail    (t : tid)
 | GuardDrop      (t : tid)
@@ -127,10 +124,9 @@ Definition step (s : State) (e : Event) : State :=
   | Held _ _, LockAcquire _        => Error
   | Held _ _, TryLockSuccess _     => Error
 
-  (* numeric-guarded stutters *)
-  | Unlocked, TryLockCall _ n => if Nat.leb n MAX_RETRY then Unlocked else Error
-  | Held o w, TryLockCall _ n => if Nat.leb n MAX_RETRY then Held o w else Error
-  | Waking q, TryLockCall _ n => if Nat.leb n MAX_RETRY then Waking q else Error
+  | Unlocked, TryLockCall _   => Unlocked
+  | Held o w, TryLockCall _   => Held o w
+  | Waking q, TryLockCall _   => Waking q
   | Unlocked, TryLockFail _   => Unlocked
   | Held o w, TryLockFail _   => Held o w
   | Waking q, TryLockFail _   => Waking q
@@ -166,8 +162,7 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
 | PU_nil  : productions U nil
 | PU_call : forall t, productions U (Se (LockCall t) :: Sn U :: nil)
 | PU_tryf : forall t, productions U (Se (TryLockFail t) :: Sn U :: nil)
-| PU_tryc : forall t n, Nat.leb n MAX_RETRY = true ->
-    productions U (Se (TryLockCall t n) :: Sn U :: nil)
+| PU_tryc : forall t, productions U (Se (TryLockCall t) :: Sn U :: nil)
 | PU_acq  : forall t, productions U (Se (LockAcquire t) :: Sn (H t nil) :: nil)
 | PU_succ : forall t,
     productions U (Se (TryLockSuccess t) :: Sn (H t nil) :: nil)
@@ -177,8 +172,7 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
     productions (H o w) (Se (LockCall t) :: Sn (H o w) :: nil)
 | PH_tryf : forall o w t,
     productions (H o w) (Se (TryLockFail t) :: Sn (H o w) :: nil)
-| PH_tryc : forall o w t n, Nat.leb n MAX_RETRY = true ->
-    productions (H o w) (Se (TryLockCall t n) :: Sn (H o w) :: nil)
+| PH_tryc : forall o w t, productions (H o w) (Se (TryLockCall t) :: Sn (H o w) :: nil)
 | PH_wait : forall o w t,
     productions (H o w) (Se (Wait t) :: Sn (H o (w ++ (t :: nil))) :: nil)
 | PH_drop : forall o w,
@@ -188,8 +182,7 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
 | PW_call : forall q t, productions (W q) (Se (LockCall t) :: Sn (W q) :: nil)
 | PW_tryf : forall q t,
     productions (W q) (Se (TryLockFail t) :: Sn (W q) :: nil)
-| PW_tryc : forall q t n, Nat.leb n MAX_RETRY = true ->
-    productions (W q) (Se (TryLockCall t n) :: Sn (W q) :: nil)
+| PW_tryc : forall q t, productions (W q) (Se (TryLockCall t) :: Sn (W q) :: nil)
 | PW_acq  : forall q t,
     productions (W q) (Se (LockAcquire t) :: Sn (H t q) :: nil)
 | PW_succ : forall q t,
@@ -330,8 +323,8 @@ Proof.
   - (* U / Unlocked / LockAcquire *)
     exists (H t nil). split; [ exact (PU_acq t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
-  - (* U / Unlocked / TryLockCall, within budget *)
-    exists U. split; [ exact (PU_tryc t n Hb) | ].
+  - (* U / Unlocked / TryLockCall *)
+    exists U. split; [ exact (PU_tryc t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
   - (* U / Unlocked / TryLockSuccess *)
     exists (H t nil). split; [ exact (PU_succ t) | ].
@@ -342,9 +335,9 @@ Proof.
   - (* H owner waiters / Held / LockCall *)
     exists (H owner waiters). split; [ exact (PH_call owner waiters t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
-  - (* H owner waiters / Held / TryLockCall, within budget *)
+  - (* H owner waiters / Held / TryLockCall *)
     exists (H owner waiters). split;
-      [ exact (PH_tryc owner waiters t n Hb) | ].
+      [ exact (PH_tryc owner waiters t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
   - (* H owner waiters / Held / TryLockFail *)
     exists (H owner waiters). split; [ exact (PH_tryf owner waiters t) | ].
@@ -365,8 +358,8 @@ Proof.
   - (* W queue / Waking / LockAcquire (barging keeps the queue) *)
     exists (H t queue). split; [ exact (PW_acq queue t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
-  - (* W queue / Waking / TryLockCall, within budget *)
-    exists (W queue). split; [ exact (PW_tryc queue t n Hb) | ].
+  - (* W queue / Waking / TryLockCall *)
+    exists (W queue). split; [ exact (PW_tryc queue t) | ].
     simpl; rewrite ?Nat.eqb_refl, ?nat_list_eqb_refl; reflexivity.
   - (* W queue / Waking / TryLockSuccess *)
     exists (H t queue). split; [ exact (PW_succ queue t) | ].
@@ -460,11 +453,4 @@ Proof. reflexivity. Qed.
 
 (* Waiting on a free lock is an error: there is nothing to wait for. *)
 Example wait_on_free_lock : acceptsp (Create :: Wait 0 :: nil) = false.
-Proof. reflexivity. Qed.
-
-(* The numeric guard carries over unchanged. *)
-Example retry_over_budget : acceptsp (Create :: TryLockCall 0 11 :: nil) = false.
-Proof. reflexivity. Qed.
-
-Example retry_at_budget : acceptsp (Create :: TryLockCall 0 10 :: nil) = true.
 Proof. reflexivity. Qed.

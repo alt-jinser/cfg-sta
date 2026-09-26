@@ -1,6 +1,6 @@
 (* Parameterized Mutex protocol, on top of protocol_lib.
 
-   Two additions over mutex_grammar.v:
+   One addition over mutex_grammar.v:
 
    1. IDENTITY.  Events carry a thread id and `Held` carries its owner, so
       the state space {Uninitialized} + {Unlocked} + {Held t | t : nat} +
@@ -8,20 +8,16 @@
       is why the grammar needs a *parameterized nonterminal* H(o) and a
       regular language will not do.
 
-   2. NUMERIC CONSTRAINT.  TryLockCall t n is legal only when
-      n <= MAX_RETRY (literally "参数 > 10").  The guard sits on the
-      production, not in the alphabet.
-
        Program -> epsilon | Create U
 
        U    -> epsilon
              | LockCall(t) U | TryLockFail(t) U
-             | TryLockCall(t,n) U         when n <= MAX_RETRY
+             | TryLockCall(t) U
              | LockAcquire(t) H(t) | TryLockSuccess(t) H(t)
 
        H(o) -> epsilon
              | LockCall(t) H(o) | TryLockFail(t) H(o)
-             | TryLockCall(t,n) H(o)      when n <= MAX_RETRY
+             | TryLockCall(t) H(o)
              | GuardDrop(o) U             <-- identity match
 
    This file owes protocol_lib only the transition matrix, the
@@ -40,9 +36,6 @@ Require Import protocol_lib.
 
 Definition tid := nat.
 
-(** The numeric guard: attempts above this budget are rejected. *)
-Definition MAX_RETRY : nat := 10.
-
 Inductive State : Type :=
 | Uninitialized
 | Unlocked
@@ -53,7 +46,7 @@ Inductive Event : Type :=
 | Create
 | LockCall       (t : tid)
 | LockAcquire    (t : tid)
-| TryLockCall    (t : tid) (n : nat)
+| TryLockCall    (t : tid)
 | TryLockSuccess (t : tid)
 | TryLockFail    (t : tid)
 | GuardDrop      (t : tid).
@@ -70,14 +63,14 @@ Definition step (s : State) (e : Event) : State :=
   | Unlocked, Create => Error
   | Unlocked, LockCall _ => Unlocked
   | Unlocked, TryLockFail _ => Unlocked
-  | Unlocked, TryLockCall _ n => if Nat.leb n MAX_RETRY then Unlocked else Error
+  | Unlocked, TryLockCall _ => Unlocked
   | Unlocked, LockAcquire t => Held t
   | Unlocked, TryLockSuccess t => Held t
   | Unlocked, GuardDrop _ => Error
   | Held o, Create => Error
   | Held o, LockCall _ => Held o
   | Held o, TryLockFail _ => Held o
-  | Held o, TryLockCall _ n => if Nat.leb n MAX_RETRY then Held o else Error
+  | Held o, TryLockCall _ => Held o
   | Held o, LockAcquire _ => Error
   | Held o, TryLockSuccess _ => Error
   | Held o, GuardDrop t => if Nat.eqb t o then Unlocked else Error
@@ -94,15 +87,13 @@ Inductive productions : Nt -> list (sym Nt Event) -> Prop :=
 | PU_nil  : productions U nil
 | PU_call : forall t, productions U (Se (LockCall t) :: Sn U :: nil)
 | PU_tryf : forall t, productions U (Se (TryLockFail t) :: Sn U :: nil)
-| PU_tryc : forall t n, Nat.leb n MAX_RETRY = true ->
-    productions U (Se (TryLockCall t n) :: Sn U :: nil)
+| PU_tryc : forall t, productions U (Se (TryLockCall t) :: Sn U :: nil)
 | PU_acq  : forall t, productions U (Se (LockAcquire t) :: Sn (H t) :: nil)
 | PU_succ : forall t, productions U (Se (TryLockSuccess t) :: Sn (H t) :: nil)
 | PH_nil  : forall o, productions (H o) nil
 | PH_call : forall o t, productions (H o) (Se (LockCall t) :: Sn (H o) :: nil)
 | PH_tryf : forall o t, productions (H o) (Se (TryLockFail t) :: Sn (H o) :: nil)
-| PH_tryc : forall o t n, Nat.leb n MAX_RETRY = true ->
-    productions (H o) (Se (TryLockCall t n) :: Sn (H o) :: nil)
+| PH_tryc : forall o t, productions (H o) (Se (TryLockCall t) :: Sn (H o) :: nil)
 | PH_drop : forall o, productions (H o) (Se (GuardDrop o) :: Sn U :: nil).
 
 (** The invariant is PRECISE about the owner: [H o] is available in
@@ -148,9 +139,9 @@ Lemma ob_word_ok_run : forall tr,
 Proof. intros tr. unfold wellformed. split; intro H; exact H. Qed.
 
 (** Direction 2: a safe run from an available nonterminal is derivable
-    from it.  Same shape as mutex_grammar's, plus two guard splits (the
-    retry budget and the owner match) which the chain peels off before
-    the cases are read -- ten cases survive, one per real transition. *)
+    from it.  Same shape as mutex_grammar's, plus one guard split (the
+    owner match) which the chain peels off before the cases are read --
+    ten cases survive, one per real transition. *)
 (** The two witnesses [gen_of_run] asks for; the library owns the
     induction. *)
 Lemma nil_prod : forall A, productions A nil.
@@ -179,8 +170,8 @@ Proof.
   - (* U / Unlocked / LockAcquire *)
     exists (H t). split;
       [ exact (PU_acq t) | simpl; apply Nat.eqb_refl ].
-  - (* U / Unlocked / TryLockCall, within budget *)
-    exists U. split; [ exact (PU_tryc t n Hb) | reflexivity ].
+  - (* U / Unlocked / TryLockCall *)
+    exists U. split; [ exact (PU_tryc t) | reflexivity ].
   - (* U / Unlocked / TryLockSuccess *)
     exists (H t). split;
       [ exact (PU_succ t) | simpl; apply Nat.eqb_refl ].
@@ -189,9 +180,9 @@ Proof.
   - (* H owner / Held owner / LockCall *)
     exists (H owner). split;
       [ exact (PH_call owner t) | simpl; apply Nat.eqb_refl ].
-  - (* H owner / Held owner / TryLockCall, within budget *)
+  - (* H owner / Held owner / TryLockCall *)
     exists (H owner). split;
-      [ exact (PH_tryc owner t n Hb) | simpl; apply Nat.eqb_refl ].
+      [ exact (PH_tryc owner t) | simpl; apply Nat.eqb_refl ].
   - (* H owner / Held owner / TryLockFail *)
     exists (H owner). split;
       [ exact (PH_tryf owner t) | simpl; apply Nat.eqb_refl ].
@@ -227,20 +218,8 @@ Notation acceptsp := (accepts (init P) (next P) (is_error P)).
 Notation genp := (gen (prod P) (start P)).
 
 (** * ============================================================
-    What the two new parameters actually buy you
+    What the parameter actually buys you
     ============================================================ *)
-
-(* --- the numeric guard, literally "参数 > 10" --- *)
-Example retry_at_budget : acceptsp (Create :: TryLockCall 0 10 :: nil) = true.
-Proof. reflexivity. Qed.
-
-Example retry_over_budget : acceptsp (Create :: TryLockCall 0 11 :: nil) = false.
-Proof. reflexivity. Qed.
-
-Example retry_over_budget_not_generated : ~ genp (Create :: TryLockCall 0 11 :: nil).
-Proof.
-  intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
-Qed.
 
 (* --- the identity guard: releasing someone else's lock is an error --- *)
 Example drop_by_other_rejected :
@@ -255,13 +234,8 @@ Proof. reflexivity. Qed.
 Example gen_drop_by_owner : genp (Create :: LockAcquire 0 :: GuardDrop 0 :: nil).
 Proof. apply (gen_iff_accepts P). reflexivity. Qed.
 
-Example gen_retry_within_budget : genp (Create :: TryLockCall 7 3 :: nil).
+Example gen_try_call : genp (Create :: TryLockCall 7 :: nil).
 Proof. apply (gen_iff_accepts P). reflexivity. Qed.
-
-Example gen_retry_over_budget : ~ genp (Create :: TryLockCall 7 11 :: nil).
-Proof.
-  intro H. apply (gen_iff_accepts P) in H. simpl in H. discriminate H.
-Qed.
 
 (** The identity constraint cannot be expressed over a finite alphabet:
     the recognizer has infinitely many states [Held t].  Two traces that

@@ -74,5 +74,16 @@ names. Extending the contract to observable outcomes -- reports, not
 just faults -- would let it in; that is a contract change and stays
 open.
 
+**No numeric retry budget.**  `mutex_param.v` and `mutex_waitqueue.v`
+carried `n <= MAX_RETRY = 10` on `TryLockCall`, cited as "literally
+参数 > 10".  No artifact has it: `mutex_protocol.rs` and both
+`docs/sync-protocol/` models give the event with no counter, the
+Redex prototype (git `ec1202f`) has no bound, the implementation
+retries without one (`wait_until(|| try_lock())`), and research notes
+and history contain no such number -- while `mutex_waitqueue.v` cited
+`mutex_param.v`, which is circular.  Removed: the guard, the counter
+parameter, and the tests for them; the events now match the
+documented alphabet exactly.
+
 Arguments: headers of `protocol_lib.v` and `rcu.v`; facts and gates in
 `MODELS.md`.

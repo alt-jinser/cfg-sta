@@ -38,8 +38,8 @@ statement of completeness is *false* in general (see the header of
 | file | lines | nonterminals | productions | grammar shape |
 |---|---|---|---|---|
 | `mutex_grammar.v` | 287 | `Program`, `U`, `H` | 13 | right-linear, finite |
-| `mutex_param.v` | 273 | `Program`, `U`, `H(o)` | 13 | parameterized; retry-budget guard on two productions |
-| `mutex_waitqueue.v` | 470 | `Program`, `U`, `H(o,w)`, `W(q)` | 21 | parameterized by a **queue**; `wake_info` reads the head |
+| `mutex_param.v` | 247 | `Program`, `U`, `H(o)` | 13 | parameterized by the **owner**; right-linear |
+| `mutex_waitqueue.v` | 456 | `Program`, `U`, `H(o,w)`, `W(q)` | 21 | parameterized by a **queue**; `wake_info` reads the head |
 | `buffer.v` | 269 | `Program`, `Buf(n)`, `Cl` | 10 | parameterized by the **count**; `Get` guarded by `1 <= n` |
 | `rcu.v` | 570 | `Program`, `Body` | 6 | **non-right-linear** (`Body -> Read Body Drop Body`) |
 | `rwlock.v` | 281 | `RwRead n`, `RwWrite` | 6 (+2 ε) | count-parameterized, right-linear; **no protocol spec exists**, so both sides come from the implementation (see `PIPELINE.md`, open question 1) |
@@ -83,7 +83,7 @@ completeness induction (`gen_of_run`); `hand` = proof written out.
 | model | 1–3 | 4 `prod_ok` | 5–6 `word_ok`/`word_ok_run` | 7 `word_ok_gen` |
 |---|---|---|---|---|
 | `mutex_grammar` | mech, mech, 1-line | mech (all 13) | 1-line + 1-line | **witness**: `nil_prod` + `step_prod`, 10 cases |
-| `mutex_param` | mech, mech, 1-line | mech (guards split by `finish_goal`) | 1-line + 1-line | **witness**: 10 cases, 2 guard splits |
+| `mutex_param` | mech, mech, 1-line | mech (the owner guard split by `finish_goal`) | 1-line + 1-line | **witness**: 10 cases, 1 guard split |
 | `mutex_waitqueue` | mech, mech, 1-line | mech + `available` reflexivity cleanup + manual `Wake` cell (2 goals) | 1-line + 1-line | **witness**: 17 cases; `Wake` cell opened by hand |
 | `buffer` | mech, mech, 1-line | mech + 2 length cleanups | 1-line + 1-line | **witness**: 7 cases |
 | `rcu` | hand, 1-line, 1-line | **hand**: 4 cases; `PB_cs` needs `reach_positive` | 1-line + 1-line | **hand**: `body_complete` + `dip_split` |
