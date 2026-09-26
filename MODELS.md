@@ -59,7 +59,7 @@ Two of these parameters are forced, not decorative:
 
 Every file under `ostd/src/sync/` now has a verdict: five are modeled
 above (`mutex`, `rwlock`, `rwmutex`, `spin`, `rcu`); the rest are not
-protocols F1 can express.
+protocols the contract can express.
 
 * `guard.rs` -- the `SpinGuardian` / `GuardTransfer` trait layer the
   locks parameterize on.  Its single transfer site is

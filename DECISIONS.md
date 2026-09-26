@@ -7,8 +7,7 @@ What was chosen, what it rules out, and where the argument lives.
 transition table; the only bridge to the machine is `inv`. This
 replaces the earlier `stutter` / `changes_to` / `starts_to` classes:
 the grammar rule for an advance and for a release is literally the
-same term, so the class names carried no semantics. We are on F1 of
-the plan's variants; F3 remains the documented fallback.
+same term, so the class names carried no semantics.
 
 **Derivability in yield form** (`D_base` / `D_se` / `D_sn`), not a
 rewriting relation. The rule records where the word splits between a
@@ -61,7 +60,7 @@ the family being context-free.
 an experiment, two side by side double the proof surface and add no
 evidence; `protocol_lib.v` is the single contract.
 
-**`wait` is not modelable under F1.** The contract's events are
+**`wait` is not modelable under the contract.** The contract's events are
 guarded protocol operations with a misuse reading, and
 `ostd/src/sync/wait.rs` offers none: `wake_one → false` is legal
 (`:153`), `wait_until` re-loops until the deadline (`:124-142`), and

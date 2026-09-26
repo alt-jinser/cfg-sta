@@ -27,7 +27,7 @@ Measured across the eight models (detail in `MODELS.md`):
 
 | output | mechanized? | evidence |
 |---|---|---|
-| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS invented internal labels, which only `mutex_waitqueue` has (`Wait`, `Wake`) -- and hand-written alphabets also miss real operations: the `spin` alphabet had no event for `disable_irq().lock()` though the kernel calls it 37 times -- the client view caught it, and the model was amended (`DisableIrq`) |
+| **alphabet (events)** | **no -- hand-written per model** | public verbs come from the API surface (acquire / release / downgrade), so that part is mechanizable in principle (rust-analyzer); it would MISS internal (non-API) labels, which only `mutex_waitqueue` has (`Wait`, `Wake` -- model-chosen names for steps that `wait.rs`, `mutex_tla.rs` and `mutex_verussync.rs` describe) -- and hand-written alphabets also miss real operations: the `spin` alphabet had no event for `disable_irq().lock()` though the kernel calls it 37 times -- the client view caught it, and the model was amended (`DisableIrq`) |
 | transition table + error flag | taken from the existing spec -- or, where none exists (`rwlock.v`), from the implementation | -- |
 | obligations 1–3 (glue) | fully mechanical | 8/8 |
 | obligation 4 (`prod_ok`) | mechanical | 7/8; the eighth needs the net measure |
@@ -56,7 +56,8 @@ obligations.
    `ostd/docs/sync-protocol/mutex-regular-language.md`, the document
    that defines that exact alphabet and table -- two artifacts.
    `mutex_param.v`'s identity parameter cites `mutex-fsm.md` in the
-   same directory.  `rcu.v` takes both sides from the implementation, and
+   same directory.  The element-by-element audit of all eight models
+   is `PROVENANCE.md`.  `rcu.v` takes both sides from the implementation, and
    the reason was checked rather than assumed: `ostd/specs/sync/rcu/`
    exists but covers allocation registration and publication identity
    only, and `root.rs` says outright that "physical ownership, reader

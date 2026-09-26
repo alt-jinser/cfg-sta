@@ -11,6 +11,10 @@
        Wait t   -- t found the lock held and enqueued itself (tail)
        Wake t   -- the holder released, and t (the queue HEAD) takes over
 
+   Both steps are described, under other names, in `wait.rs`
+   (`enqueue` / `wake_one` / `wake_up`) and in
+   `examples/mutex_tla.rs` / `examples/mutex_verussync.rs`.
+
    States
        Uninitialized
        Unlocked                     -- free, queue empty (only after Create)
