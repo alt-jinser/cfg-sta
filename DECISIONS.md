@@ -61,5 +61,18 @@ the family being context-free.
 an experiment, two side by side double the proof surface and add no
 evidence; `protocol_lib.v` is the single contract.
 
+**`wait` is not modelable under F1.** The contract's events are
+guarded protocol operations with a misuse reading, and
+`ostd/src/sync/wait.rs` offers none: `wake_one → false` is legal
+(`:153`), `wait_until` re-loops until the deadline (`:124-142`), and
+`waiter_wake_twice` asserts the second wake returns false -- blocking
+is the call's function, not a failure, and every report is a
+bool/Option (the file's 17 `assert!`s serve Verus proofs and tests,
+not a client-facing fault). An event would have to invent a fault the
+implementation does not have, which is the independence risk 1.1
+names. Extending the contract to observable outcomes -- reports, not
+just faults -- would let it in; that is a contract change and stays
+open.
+
 Arguments: headers of `protocol_lib.v` and `rcu.v`; facts and gates in
 `MODELS.md`.
