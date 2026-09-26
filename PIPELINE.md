@@ -116,6 +116,26 @@ obligations.
      "no protocol spec" claims intact; `docs/sync-protocol/README.md`
      calls mutex "the first complete synchronization-protocol
      result".
+
+   **Pilot 3, done** -- `rwlock` and `rwmutex` (49 / 45 `RwLock<` /
+   `RwMutex<` mentions, plus 80 `WaitQueue`):
+
+   * *The pattern holds again.*  15 client functions return a read or
+     write guard (prefix closure, third confirmation); `try_read` /
+     `try_write` have 0 real uses, so the Option exclusion stands for
+     the second time; `impl Drop` is commented out in `rwlock.rs`
+     (`:858`, `:1091`) and absent from `rwmutex.rs`, while clients
+     call `drop(guard)` explicitly (`input_core.rs:167`) -- manual
+     release is the live path in all four guard files.
+   * *The declared scope gap is exercised, not hypothetical:*
+     `upread()` has 18 real call sites and `upgrade()` runs at
+     `softirq/src/lock.rs:195` on an `RwLock`, so rwlock.v's
+     "upgrade / upreader machinery out of scope" excludes what
+     clients actually do.
+   * *The `get_mut` class is three models wide:* `rwlock.rs:624` and
+     `rwmutex.rs:520` add it to mutex's two verbs -- same
+     no-pairing / `&mut self` argument, still unlisted in the models'
+     own scope notes.
 2. **When does a protocol need parameters, and when a non-right-linear
    production?**  Draft criterion -- a hypothesis to be validated, not
    a result:
