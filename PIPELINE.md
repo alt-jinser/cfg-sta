@@ -1,15 +1,59 @@
 # What a code → grammar pipeline must produce
 
-Task 1.1's loop is *client → property → verify against the existing
-contracts → spec-gap report* (`research/task-1.1-*.md`).  The protocol
-work occupies one cell of it: **the documented usage grammar and the
-spec's state machine denote the same language**, so `gen_iff_accepts`
-is the checker for that cell -- a mismatch is a spec gap with a named
-witness.  The state machines it would be checked against already exist
-(`vostd/ostd/specs/sync/mutex_protocol.rs`,
-`vostd/ostd/specs/sync/examples/mutex_tla.rs`, whose
-`mutual_exclusion`/`starvation_free` are the fairness samples 1.1 defers
-to).
+Task 1.1's loop is *client → top-level property → verify against the
+existing API spec → spec-gap report* (`research/task-1.1-*.md`). A CFG
+can describe the client interaction language and make the required
+property explicit. The key check is whether the client-generated
+behaviors are supported by the API spec and whether the property follows;
+language equality between a client CFG and a protocol recognizer is not
+the general goal. Client behaviors are normally a subset of all protocol
+behaviors, and a client may intentionally require balanced completion
+while the API permits a trace to end with a guard held.
+
+The repository's original protocol models remain useful as machine-
+checked API-language representations and counterexample tools. They do
+not synthesize top-level properties from clients by themselves. The first
+client-side links are documented in `CLIENT_CFG_CASE.md`. The stronger
+pilot, `mutex_client_cfg.v`, abstracts a real Asterinas registry lookup
+and proves its CFG traces are accepted by the mutex spec. The companion
+`xarray_client_cfg.v` targets SpinLock, for which no independent formal
+spec exists in `vostd/ostd/specs/sync/`; that result is client-to-model
+evidence only.
+
+The functional COW pilot is the one-page path in Asterinas'
+`cow_copy_pt_basic` test. Its source assertions ask for physical-frame
+identity, read-only COW permissions, and child-mapping persistence after a
+parent unmap. The contract audit in `CLIENT_CFG_CASE.md` finds relevant
+clauses in the local `Cursor` map/query specs. The embedding now proves
+cursor continuity, Query-to-Map handle flow, and the metadata and view
+postconditions of Unmap. The embedding contains a result-bearing one-page RAM
+COW trace: FindNext, Query, child-specific write protection, Jump, Map, and
+parent Unmap. This trace still relies on trusted embedding mirrors. Path
+accounting now uses multiset semantics, so the same path under distinct
+page-table roots can contribute multiple references. The executable Map API
+proves exact base-page path insertion and its `+1` length effect. The abstract
+store accounting now includes pending/in-flight TLB-retained frames, and
+model-level Unmap proves path/TLB conservation. The runtime-backed Unmap store
+bridge, Rocq state refinement, and production COW loop remain open. The last
+completed full Vostd verification run fails at `CursorMut::unmap`'s
+`unmap_spec` postcondition (1575 verified, 1 error); the preceding full run
+passed (1576 verified, 0 errors). Verification still includes the embedding
+axioms.
+`mm_cow_client_cfg.v` compiles a projection of those embedding actions
+into the client CFG, including the parent-unmap suffix. The projection
+does not prove that Rocq's candidate transition semantics refine the
+Verus store contracts. Several operations still use trusted store-level
+embedding axioms; `run` for arbitrary traces still preserves only
+`VmStore.inv()`. The production loop, MMIO behavior, and general callback
+semantics remain open. Details and trust boundaries are in
+`CLIENT_CFG_CASE.md`.
+
+For mutex, existing top-level properties in
+`vostd/ostd/specs/sync/examples/mutex_tla.rs` include
+`mutual_exclusion` and `starvation_free`; these are candidate properties
+for a richer client-driven case. `gen_iff_accepts` remains valuable for
+checking an API-language model against its grammar, but it does not
+replace the client-property proof obligation.
 
 Two mismatch shapes are already demonstrated in this repository:
 

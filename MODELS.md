@@ -46,6 +46,10 @@ statement of completeness is *false* in general (see the header of
 | `spin.v` | 249 | `NFree`, `NHeld` | 6 (+2 ε) | finite, right-linear; **no protocol spec** (implementation only) |
 | `rwmutex.v` | 350 | `NReaders n`, `NUpReader n`, `NWriter` | 14 (+3 ε) | count-parameterized ×2, right-linear mode conversions; **no protocol spec** (implementation only) |
 
+`mutex_client_cfg.v` and `xarray_client_cfg.v` are separate client-side
+CFG pilots, not additional protocol models. See `CLIENT_CFG_CASE.md` for
+their sources, properties, and evidence boundaries.
+
 Two of these parameters are forced, not decorative:
 
 * `Buf(n)` in `buffer.v` -- a production is state-independent, so a
@@ -121,16 +125,19 @@ list- or guard-carrying nonterminal:
 
 ```sh
 cd AES/working
-make          # build all eight files
+make          # build protocol models, two protocol-client CFGs, and mm COW candidate CFG
 make check    # build, then the gates below
 ```
 
 | gate | expected |
 |---|---|
-| all eleven files above | compile clean, no warnings |
+| all fourteen Rocq files | compile clean, no warnings |
 | `grep "Theorem gen_iff_accepts" *.v` | exactly one hit, `protocol_lib.v` |
 | `grep "Admitted\|admit()\|assume()\|external_body" *.v` | no hits |
-| `git -C ../vostd status --porcelain --ignore-submodules=dirty` | no output: vostd is read-only for this work (the dirty `dv` submodule is ignored, by decision) |
+
+The adjacent Vostd checkout is intentionally modified by the COW embedding
+integration, so its clean-worktree check is not a valid gate for this task.
+Review those source changes separately in the Vostd worktree.
 
 `mutex.v` supplies the transition table and seven regression tests and
 does not depend on the library; `guard_demo.v` only exercises the
