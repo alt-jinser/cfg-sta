@@ -33,12 +33,19 @@ accounting now uses multiset semantics, so the same path under distinct
 page-table roots can contribute multiple references. The executable Map API
 proves exact base-page path insertion and its `+1` length effect. The abstract
 store accounting now includes pending/in-flight TLB-retained frames, and
-model-level Unmap proves path/TLB conservation. The runtime-backed Unmap store
-bridge, Rocq state refinement, and production COW loop remain open. The last
-completed full Vostd verification run fails at `CursorMut::unmap`'s
-`unmap_spec` postcondition (1575 verified, 1 error); the preceding full run
-passed (1576 verified, 0 errors). Verification still includes the embedding
-axioms.
+model-level Unmap proves path/TLB conservation. Runtime `CursorMut::unmap` and
+`Op::Unmap` now use the view-only postcondition, separated from return-count
+refinement. A verified one-page runtime RAM COW driver now composes FindNext,
+Query, COW protection, child Map, and parent Unmap, proving the parent page
+absent while preserving the child's mapped view. The full Vostd gate passes
+(1580 verified, 0 errors). This driver does not establish store accounting,
+and the abstract trace still relies on a trusted metadata/TLB mirror. Runtime
+Unmap now verifies local single-page resource deltas: the fragment matches
+the queried mapping, metadata refcount is unchanged, one page-table path is
+removed, and one TLB-retained reference is added for the same PA. Exporting
+and composing these deltas into store accounting, runtime return-count
+refinement, Rocq state refinement, and the production COW loop remain open.
+Verification still includes trusted embedding axioms.
 `mm_cow_client_cfg.v` compiles a projection of those embedding actions
 into the client CFG, including the parent-unmap suffix. The projection
 does not prove that Rocq's candidate transition semantics refine the

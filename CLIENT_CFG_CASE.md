@@ -157,7 +157,7 @@ obligation.
 | `QueryParent` | `src.query()` returns `VmQueriedItem::MappedRam { frame, prop }` (:93-100) | Vostd returns `MappedItem { frame: UFrame, prop }`, without that enum split. `cursor_query_store_api` now runs real Query against a tracked cursor entry. It registers a returned handle at a fresh Frame ID and proves store structure/accounting, or preserves frames/accounting when the result is `None`. The proof-only generic `lemma_step_query` remains a trusted store-level mirror and is not yet connected to the runtime wrapper. |
 | `ProtectParent` | `op` mutates `&mut PageFlags` and `&mut CachePolicy`; `protect_next` advances the source cursor (:88-102, :116-117) | The general `Op::ProtectNext` remains callback-free. A client-specific `CowProtectNext` embedding action represents the one-page callback that removes W, returns the protected range, and changes exactly the selected mapping under `protect_mapping_update_at`. This is a trusted store-level mirror. |
 | `JumpChild` / `MapChild` | `dst.jump(mapped_va)` then `dst.map(frame, prop)` (:104-106) | The runtime trace requires the destination cursor to already point at `mapped_va`, so Jump is an identity step and is omitted. `cursor_map_store_api` now consumes the Query-registered `FrameId`, borrows the source cursor's tracked `EntryOwner`, and calls real `CursorMut::map` into an absent base-page slot. Its contract proves the target view's `map_spec` transition and preserves `VmStore::inv()`. The generic proof-only Map step remains a trusted mirror. |
-| `UnmapParent` | A fresh parent cursor calls `unmap(map_range.len())` after the copy (:198-202) | Vostd's exec contract has `CursorView::unmap_spec`. A new `cursor_entry_unmap_api` invokes runtime `CursorMut::unmap` and proves the cursor/view and safety invariants. Its metadata accounting effects are not yet exposed, so the store-level Unmap bridge and client wiring still rely on the trusted mirror. The latest full Vostd verification fails at the `CursorMut::unmap` proof of `unmap_spec`; trusted embedding axioms also remain. |
+| `UnmapParent` | A fresh parent cursor calls `unmap(map_range.len())` after the copy (:198-202) | Runtime `CursorMut::unmap`, embedding `Op::Unmap`, `cursor_mut_regions_step`, and the COW trace use `unmap_view_spec`. `cow_ram_runtime_find_query_protect_map_unmap` executes the selected one-page RAM path through real FindNext, Query, source protection, destination Map, and parent Unmap in one driver. Its success contract proves the parent absent at the page and the child still has the mapped view. It requires the source view to contain exactly the queried one-page mapping. The driver preserves regions/TLB invariants but does not establish `VmStore::accounting_inv()`. The abstract `lemma_step_unmap` still relies on trusted `cursor_mut_unmap_embedded` for metadata/TLB accounting. A conditional single-page return-count contract is verified through the runtime and wrapper APIs when the current owner is a base-page frame, but the COW client cannot establish that condition after Jump and does not use the count result. General return-count refinement remains open. Full Vostd verification passes (1580 verified, 0 errors); trusted embedding axioms remain. |
 | MMIO branch | `MappedIoMem`, `find_iomem_by_paddr`, `map_iomem` (:110-124) | `mm_cow_client_cfg.v` now has a separate candidate trace that preserves the parent's permissions, maps the same PA into the child, then checks child persistence after parent unmap. It has no Vostd action projection: this Vostd `VmSpace` interface has no IoMem handle or `map_iomem` operation. |
 
 Cursor-position detail: successful `protect_next` and `map` advance the cursor
@@ -205,14 +205,13 @@ permissions in the child, and checks that the child remains mapped after
 parent unmap. The missing IoMem operations in Vostd mean this branch is not
 connected to a Vostd trace.
 
-The runtime prefix `cow_ram_runtime_find_query_protect_map` executes
-FindNext, Query, COW protection, and Map through real cursor APIs and the
-shared `VmStore`; a preceding full Verus run passed with 1576 verified, 0
-errors. The latest completed full run fails in the strengthened Unmap proof
-(1575 verified, 1 error). This is not yet the complete client proof: generic FindNext, Query,
-Map, and `CowProtectNext` still have trusted store-level mirrors, and this
-driver has not been composed with executable Unmap or the Rocq observation
-bridge. Exec `protect_next` also proves that success advances the concrete
+The runtime driver `cow_ram_runtime_find_query_protect_map_unmap` executes
+FindNext, Query, COW protection, Map, and parent Unmap through real cursor
+APIs and the shared `VmStore`; the full Verus gate passes with 1580 verified,
+0 errors. This proves the selected one-page functional path, but it is not yet
+the complete client proof: generic FindNext, Query, Map, and `CowProtectNext`
+still have trusted store-level mirrors, and the runtime path is not connected
+to the Rocq observation bridge. Exec `protect_next` also proves that success advances the concrete
 cursor to the returned range end. The RAM trace uses the explicit
 `CowProtectNext` action because the general callback-taking API cannot yet be
 represented in `Op`. The generic `run` theorem still proves
@@ -538,15 +537,17 @@ precondition explicit. The one-page invariant covers both `Mapped` and
 pre-call mapping and cursor snapshot because `take_next(None)` has already
 advanced the current view. The full Vostd run passes (1566 verified, 0 errors).
 
-This closes the scoped one-page return-count obligation. The general range
-contract remains open across arbitrary mappings, absent gaps, and huge-page
-boundary splits. `CursorView::unmap_spec` now relates `num_unmapped` to
+The one-page view-level count lemmas relate `num_unmapped` to
 `unmap_count(len)` for a present base mapping at the cursor when `len` is one
 page and the exclusive end address is representable. The helper lemma proves
 that this normalized count is one by using view non-overlap and the mapping
-fragment normalizer. The separate one-page return-count clause remains. The
-exclusive-end guard matters because the current count interface stores the end
-as `Vaddr`, so a range ending at the top of the address space wraps there.
+fragment normalizer. The runtime `CursorMut::unmap` count clause is narrower:
+it additionally requires a singleton view and a base-page frame owner. The
+COW client cannot establish the owner condition after Jump, so it does not yet
+consume that clause. General range refinement remains open across arbitrary
+mappings, absent gaps, and huge-page boundary splits. The exclusive-end guard
+matters because the current count interface stores the end as `Vaddr`, so a
+range ending at the top of the address space wraps there.
 `CursorView::unmap_count` defines the recursive count per
 old mapping through `unmap_mapping_fragments` and combines them into
 `unmap_fragments_set`; `unmap_count` is the normalized set's cardinality.
@@ -614,40 +615,90 @@ smallest useful contract target; a generic range postcondition can follow.
 
 ### Remaining concrete steps
 
-1. **Runtime Map prefix verified; Unmap integration remains.** The
-   `cow_ram_runtime_find_query_protect_map` driver executes FindNext, Query,
-   source COW protection, and destination Map over two actual `CursorMut`
-   handles sharing one `VmStore`. Query registers the cloned frame under a
+1. **One-page RAM COW runtime path verified through Unmap.** The
+   `cow_ram_runtime_find_query_protect_map_unmap` driver executes FindNext,
+   Query, source COW protection, destination Map, and parent Unmap over two
+   actual `CursorMut` handles sharing one `VmStore`. Query registers the cloned frame under a
    fresh `FrameId`; Map consumes that handle and borrows the source cursor's
    tracked `EntryOwner`, avoiding permission reconstruction. The target must
    be empty, at level 1, and have a guard level above 1; its locked range must
    cover the base page. Map's `map_spec` advances the destination cursor by one
-   page and records the mapping at the original VA. A previous full Verus run
-   passed (1576 verified, 0 errors). The last completed full run fails at the `unmap_spec`
-   postcondition in `CursorMut::unmap` (1575 verified, 1 error).
+   page and records the mapping at the original VA. The current full Verus gate
+   passes (1580 verified, 0 errors). Unmap uses `unmap_view_spec`, which
+   separates mapping effects and cursor advancement from return-count
+   refinement. A conditional contract proves a return count of one for a
+   singleton base-page view when the current owner entry is a base-page frame.
+   The COW client cannot prove that owner condition after Jump, so it does not
+   assert the count. The driver proves the parent page absent and preserves the
+   child's mapped view, plus local region/TLB invariants. It does not establish
+   `VmStore::accounting_inv()`. The abstract
+   `lemma_step_unmap` still uses the trusted `cursor_mut_unmap_embedded`
+   metadata/TLB mirror, so composing the runtime wrapper with the trace and
+   proving resource conservation remain open. General return-count refinement
+   is a separate open obligation.
 
-   A subsequent attempt to prove the base-page count directly added special
-   first-iteration reasoning to the loop. That attempt did not verify: interval
-   arithmetic, loop invariants, and a split-locality precondition failed. The
-   experimental special case was removed. The previous full-gate result above
-   is the last completed verification result; this cleanup was checked with
-   `git diff --check` but was not followed by another full verification run.
-
-   `cursor_entry_unmap_api` now requires the runtime cursor VA to equal the
+   `cursor_entry_unmap_api` requires the runtime cursor VA to equal the
    tracked owner's current VA, matching the position condition already used by
-   the query and protect wrappers. It still exposes cursor/view refinement,
+   the query and protect wrappers. It exposes cursor/view refinement,
    `metaregion_sound`, and TLB invariant preservation, but not the store's
    per-slot accounting transition. A verified `CursorView` lemma now states
    that two mappings covering the same VA in a non-overlapping view are equal;
    it passed with the full Verus gate, but has not yet been wired into Unmap.
-   The lower-level `take_next` contract exports a path-count decrement for its
-   current mapping, and the TLB model exports retained-frame counts. Those
-   aggregate facts are sufficient in shape for slot-resource conservation;
-   identifying the individual path is not required. The missing link is to
-   carry a stable mapping witness through `take_next` and its TLB flush, then
-   use the same physical-frame index in the store accounting proof. The
-   attempted direct one-page postcondition did not verify, so no new Unmap
-   accounting contract was retained.
+   The runtime proof now carries a stable mapping witness through the
+   single-base-page `take_next` and TLB issue path: the returned fragment is
+   the queried mapping, its metadata refcount is unchanged, its page-table
+   path count decreases by one, and issuing the flush increases the retained
+   frame count for the same PA index by one. These checks pass under the full
+   Verus gate (1580 verified, 0 errors). They are local proof facts, not yet
+   an exported `CursorMut::unmap` resource-delta contract or a proof of
+   `VmStore::accounting_inv()`. The next step is to carry the deltas through
+   the loop and dispatch, then compose them with unchanged handle/segment
+   counts in the store accounting proof. A direct attempt to export the
+   single-page deltas as a `CursorMut::unmap` postcondition did not verify:
+   the loop's `take_next(None)` exit cannot yet connect its current view to
+   the initial singleton mapping witness. Three reusable view lemmas are now
+   verified: `lemma_query_mapping_member` establishes that the selected query
+   mapping belongs to the source view, `lemma_query_mapping_is_singleton`
+   identifies the selected mapping in a singleton view, and
+   `split_while_huge_base_page_noop` establishes that splitting a base
+   page at `PAGE_SIZE` leaves the view unchanged. The former is used directly
+   in runtime Unmap and replaces a duplicate private proof in the COW trace;
+   the latter is now used in the `Mapped` loop branch to prove the removed
+   fragment remains in `adjusted_base` across the base-page split operation.
+   This establishes branch-local membership only; it does not yet preserve
+   the initial mapping witness through the later `take_next(None)` exit. A
+   verified low-level contract now says `find_next_impl(None)` and therefore
+   `take_next(None)` leave the `slot_owners` map unchanged. A singleton-page
+   function-level resource postcondition was attempted but not retained:
+   Verus still cannot maintain the fixed mapping witness and per-slot ledger
+   across every loop transition. A one-page return-count contract is now
+   verified with an additional current-frame/base-page-owner precondition and
+   propagated through the two runtime wrappers. The COW call site cannot
+   establish that precondition after Jump: its tracked owner view does not
+   expose the internal frame-owner shape. Assertions trying to establish and
+   consume the count were removed; the current green verification therefore
+   does not show client use of this contract. Generalizing the count proof to
+   both `Mapped` and `StrayPageTable` results using view-level conditions
+   remains open. A separate attempt to prove a less restricted one-page return
+   count from the final `removed` set also failed.
+   A new loop invariant now establishes that every removed fragment is either
+   an initial mapping or a sub-mapping of one; it passes the full Vostd gate
+   (1580 verified, 0 errors). However, the count proof still cannot show that
+   the queried base mapping remains in `adjusted_base` through every loop-body
+   update. Adding that stronger invariant failed on preservation at the end of
+   the loop body. An explicit
+   attempt to use the existing `split_while_huge_locality` lemma also exposed
+   its missing premise: it requires proving the target mapping does not cover
+   the split view's current VA, while the loop invariant does not yet identify
+   whether the selected fragment is the target itself or a different mapping.
+   A proposed `take_next` postcondition that a present base mapping at the
+   cursor yields `Some(Mapped)` was also rejected, even with a current-frame
+   entry condition; the existing implementation contract does not yet expose
+   enough operational detail to rule out other fragment behavior. The next
+   step is to characterize `find_next_impl`'s result variant under the actual
+   cursor-level/entry conditions used by the runtime COW driver, then use that
+   correspondence with split locality and the source relation to derive count
+   and resource effects.
 
    Remaining work is to connect executable Unmap's TLB-held frames and
    per-slot metadata effects to `VmStore::accounting_inv`, replace the

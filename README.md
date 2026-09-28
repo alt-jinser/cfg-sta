@@ -69,11 +69,19 @@ The current COW integration status is in `CLIENT_CFG_CASE.md`: the path
 accounting model now uses a multiset, so identical `TreePath` values under
 separate page-table roots count as separate references. The runtime-backed
 Map API proves exact base-page path insertion, including its `+1` multiset
-length effect. The store-integrated Map/Unmap bridge, Rocq state refinement,
-and production COW loop remain open. The last completed full Vostd run fails
-at `CursorMut::unmap`'s `unmap_spec` postcondition (1575 verified, 1 error);
-the preceding full run passed (1576 verified, 0 errors). Verification still
-includes trusted embedding axioms. The Rocq client CFG
+length effect. The one-page runtime RAM COW driver now composes FindNext,
+Query, parent protection, child Map, and parent Unmap through real cursor APIs.
+Its verified postcondition shows the parent page absent and the child mapped
+view preserved. Runtime `CursorMut::unmap` and abstract `Op::Unmap` use the
+mapping-view effect separately from return-count correctness. The full Vostd
+gate passes (1580 verified, 0 errors). The driver does not establish store
+accounting. Runtime Unmap does verify local single-page conservation facts:
+the mapping witness stays tied to the same PA, metadata refcount stays fixed,
+one page-table path is removed, and one TLB-retained frame reference is added.
+These facts are not yet exported as a function-level resource contract or
+composed into store accounting; the abstract trace still uses a trusted
+metadata/TLB mirror. Return-count refinement, Rocq state refinement,
+and the production COW loop remain open. Verification still includes trusted embedding axioms. The Rocq client CFG
 includes the matching action projection. The refinement from Rocq's
 candidate transitions to the Verus store contracts, and the production
 copy loop/MMIO cases, are still open.
